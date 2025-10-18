@@ -10,6 +10,12 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Invoicing from "@/pages/Invoicing";
+import Inventory from "@/pages/Inventory";
+import Customers from "@/pages/Customers";
+import Sales from "@/pages/Sales";
+import Reports from "@/pages/Reports";
+import Staff from "@/pages/Staff";
+import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 
@@ -20,42 +26,12 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/products" component={Products} />
       <Route path="/invoicing" component={Invoicing} />
-      <Route path="/inventory">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold mb-2">Inventory</h1>
-          <p className="text-muted-foreground">Inventory management module - Coming soon</p>
-        </div>
-      </Route>
-      <Route path="/customers">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold mb-2">Customers</h1>
-          <p className="text-muted-foreground">Customer management module - Coming soon</p>
-        </div>
-      </Route>
-      <Route path="/sales">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold mb-2">Sales</h1>
-          <p className="text-muted-foreground">Sales analytics module - Coming soon</p>
-        </div>
-      </Route>
-      <Route path="/reports">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold mb-2">Reports</h1>
-          <p className="text-muted-foreground">Reports and analytics module - Coming soon</p>
-        </div>
-      </Route>
-      <Route path="/staff">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold mb-2">Staff Management</h1>
-          <p className="text-muted-foreground">Staff management module - Coming soon</p>
-        </div>
-      </Route>
-      <Route path="/settings">
-        <div className="p-6">
-          <h1 className="text-3xl font-bold mb-2">Settings</h1>
-          <p className="text-muted-foreground">Settings and configuration - Coming soon</p>
-        </div>
-      </Route>
+      <Route path="/inventory" component={Inventory} />
+      <Route path="/customers" component={Customers} />
+      <Route path="/sales" component={Sales} />
+      <Route path="/reports" component={Reports} />
+      <Route path="/staff" component={Staff} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );
