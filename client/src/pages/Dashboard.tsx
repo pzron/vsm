@@ -5,9 +5,43 @@ import { LowStockAlert } from "@/components/LowStockAlert";
 import { TopBuyerCard } from "@/components/TopBuyerCard";
 import { QuickActions } from "@/components/QuickActions";
 import { StaffActivityLog } from "@/components/StaffActivityLog";
-import { DollarSign, ShoppingCart, Package, Users } from "lucide-react";
+import { DollarSign, ShoppingCart, Package, Users, TrendingUp, Briefcase, AlertTriangle, PackageX } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { formatCurrency, formatNumber } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+
+interface DashboardAnalytics {
+  totalProducts: number;
+  totalCustomers: number;
+  totalRevenue: number;
+  totalProfit: number;
+  totalInvoices: number;
+  totalStaff: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+}
+
+function StatCardSkeleton() {
+  return (
+    <Card data-testid="card-stat-skeleton">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-5 w-5 rounded" />
+      </CardHeader>
+      <CardContent>
+        <Skeleton className="h-9 w-32 mb-1" />
+        <Skeleton className="h-3 w-28" />
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
+  const { data: analytics, isLoading } = useQuery<DashboardAnalytics>({
+    queryKey: ["/api/analytics/dashboard"],
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -16,33 +50,69 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard
-          title="Today's Sales"
-          value="$12,450"
-          change={{ value: "15.2%", trend: "up" }}
-          icon={DollarSign}
-          iconColor="text-success"
-        />
-        <StatCard
-          title="Invoices"
-          value="48"
-          change={{ value: "8", trend: "up" }}
-          icon={ShoppingCart}
-          iconColor="text-info"
-        />
-        <StatCard
-          title="Low Stock Items"
-          value="12"
-          icon={Package}
-          iconColor="text-warning"
-        />
-        <StatCard
-          title="Total Customers"
-          value="1,234"
-          change={{ value: "23", trend: "up" }}
-          icon={Users}
-          iconColor="text-primary"
-        />
+        {isLoading ? (
+          <>
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+            <StatCardSkeleton />
+          </>
+        ) : analytics ? (
+          <>
+            <StatCard
+              title="Total Revenue"
+              value={formatCurrency(analytics.totalRevenue)}
+              icon={DollarSign}
+              iconColor="text-success"
+            />
+            <StatCard
+              title="Total Profit"
+              value={formatCurrency(analytics.totalProfit)}
+              icon={TrendingUp}
+              iconColor="text-success"
+            />
+            <StatCard
+              title="Total Invoices"
+              value={formatNumber(analytics.totalInvoices)}
+              icon={ShoppingCart}
+              iconColor="text-info"
+            />
+            <StatCard
+              title="Total Products"
+              value={formatNumber(analytics.totalProducts)}
+              icon={Package}
+              iconColor="text-primary"
+            />
+            <StatCard
+              title="Total Customers"
+              value={formatNumber(analytics.totalCustomers)}
+              icon={Users}
+              iconColor="text-primary"
+            />
+            <StatCard
+              title="Total Staff"
+              value={formatNumber(analytics.totalStaff)}
+              icon={Briefcase}
+              iconColor="text-info"
+            />
+            <StatCard
+              title="Low Stock Items"
+              value={formatNumber(analytics.lowStockCount)}
+              icon={AlertTriangle}
+              iconColor="text-warning"
+            />
+            <StatCard
+              title="Out of Stock"
+              value={formatNumber(analytics.outOfStockCount)}
+              icon={PackageX}
+              iconColor="text-destructive"
+            />
+          </>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

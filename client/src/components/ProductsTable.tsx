@@ -9,36 +9,24 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Edit, Trash2, Search, Plus } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { Product } from "@shared/schema";
 
-interface Product {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  stock: number;
-  price: string;
-  status: "active" | "inactive";
-}
-
-interface ProductsTableProps {
-  products?: Product[];
-}
-
-export function ProductsTable({ products }: ProductsTableProps) {
+export function ProductsTable() {
   const [search, setSearch] = useState("");
 
-  // todo: remove mock functionality
-  const defaultProducts: Product[] = [
-    { id: "1", name: "Wireless Mouse", sku: "WM-001", category: "Electronics", stock: 45, price: "$29.99", status: "active" },
-    { id: "2", name: "USB-C Cable 2m", sku: "UC-002", category: "Accessories", stock: 120, price: "$12.99", status: "active" },
-    { id: "3", name: "Mechanical Keyboard", sku: "MK-003", category: "Electronics", stock: 8, price: "$89.99", status: "active" },
-    { id: "4", name: "Desk Lamp LED", sku: "DL-004", category: "Furniture", stock: 0, price: "$34.99", status: "inactive" },
-    { id: "5", name: "Notebook A5", sku: "NB-005", category: "Stationery", stock: 200, price: "$4.99", status: "active" },
-  ];
+  const { data: products, isLoading } = useQuery<Product[]>({
+    queryKey: ["/api/products", search ? `?search=${search}` : ""],
+  });
 
-  const productList = products || defaultProducts;
+  const formatCurrency = (value: string | null) => {
+    if (!value) return "$0.00";
+    const num = parseFloat(value);
+    return `$${num.toFixed(2)}`;
+  };
 
   return (
     <div className="space-y-4" data-testid="products-table">
@@ -73,47 +61,72 @@ export function ProductsTable({ products }: ProductsTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {productList.map((product) => (
-              <TableRow key={product.id} data-testid={`row-product-${product.id}`}>
-                <TableCell className="font-medium">{product.name}</TableCell>
-                <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                <TableCell>{product.category}</TableCell>
-                <TableCell>
-                  <Badge
-                    variant={product.stock === 0 ? "destructive" : product.stock < 20 ? "outline" : "secondary"}
-                    className={product.stock < 20 && product.stock > 0 ? "bg-warning/10 text-warning border-warning/20" : ""}
-                  >
-                    {product.stock}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono">{product.price}</TableCell>
-                <TableCell>
-                  <Badge variant={product.status === "active" ? "default" : "secondary"}>
-                    {product.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      data-testid={`button-edit-${product.id}`}
-                      onClick={() => console.log("Edit", product.id)}
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, index) => (
+                <TableRow key={index}>
+                  <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Skeleton className="h-9 w-9" />
+                      <Skeleton className="h-9 w-9" />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : products && products.length > 0 ? (
+              products.map((product) => (
+                <TableRow key={product.id} data-testid={`row-product-${product.id}`}>
+                  <TableCell className="font-medium">{product.name}</TableCell>
+                  <TableCell className="font-mono text-sm">{product.sku}</TableCell>
+                  <TableCell>{product.category}</TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={product.currentStock === 0 ? "destructive" : product.currentStock < product.minStock ? "outline" : "secondary"}
+                      className={product.currentStock < product.minStock && product.currentStock > 0 ? "bg-warning/10 text-warning border-warning/20" : ""}
                     >
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      data-testid={`button-delete-${product.id}`}
-                      onClick={() => console.log("Delete", product.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                      {product.currentStock}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="font-mono">{formatCurrency(product.retailPrice)}</TableCell>
+                  <TableCell>
+                    <Badge variant={product.currentStock > 0 ? "default" : "secondary"}>
+                      {product.currentStock > 0 ? "active" : "inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-edit-${product.id}`}
+                        onClick={() => console.log("Edit", product.id)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        data-testid={`button-delete-${product.id}`}
+                        onClick={() => console.log("Delete", product.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  No products found
                 </TableCell>
               </TableRow>
-            ))}
+            )}
           </TableBody>
         </Table>
       </div>

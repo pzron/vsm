@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,6 +7,9 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { LogOut, User } from "lucide-react";
 import Dashboard from "@/pages/Dashboard";
 import Products from "@/pages/Products";
 import Invoicing from "@/pages/Invoicing";
@@ -18,51 +21,96 @@ import Staff from "@/pages/Staff";
 import Settings from "@/pages/Settings";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
+import { useEffect } from "react";
+
+function ProtectedRoute({ component: Component }: { component: () => JSX.Element }) {
+  const { isAuthenticated } = useAuth();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setLocation("/login");
+    }
+  }, [isAuthenticated, setLocation]);
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return <Component />;
+}
 
 function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/" component={Dashboard} />
-      <Route path="/products" component={Products} />
-      <Route path="/invoicing" component={Invoicing} />
-      <Route path="/inventory" component={Inventory} />
-      <Route path="/customers" component={Customers} />
-      <Route path="/sales" component={Sales} />
-      <Route path="/reports" component={Reports} />
-      <Route path="/staff" component={Staff} />
-      <Route path="/settings" component={Settings} />
+      <Route path="/">{() => <ProtectedRoute component={Dashboard} />}</Route>
+      <Route path="/products">{() => <ProtectedRoute component={Products} />}</Route>
+      <Route path="/invoicing">{() => <ProtectedRoute component={Invoicing} />}</Route>
+      <Route path="/inventory">{() => <ProtectedRoute component={Inventory} />}</Route>
+      <Route path="/customers">{() => <ProtectedRoute component={Customers} />}</Route>
+      <Route path="/sales">{() => <ProtectedRoute component={Sales} />}</Route>
+      <Route path="/reports">{() => <ProtectedRoute component={Reports} />}</Route>
+      <Route path="/staff">{() => <ProtectedRoute component={Staff} />}</Route>
+      <Route path="/settings">{() => <ProtectedRoute component={Settings} />}</Route>
       <Route component={NotFound} />
     </Switch>
   );
 }
 
-function App() {
+function AppContent() {
+  const { user, logout } = useAuth();
+  const [location] = useLocation();
   const style = {
     "--sidebar-width": "20rem",
     "--sidebar-width-icon": "4rem",
   };
 
+  if (location === "/login") {
+    return <Router />;
+  }
+
+  return (
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <header className="flex items-center justify-between p-4 border-b">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <div className="flex items-center gap-4">
+              {user && (
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4" />
+                  <span className="font-medium">{user.fullName}</span>
+                  <span className="text-muted-foreground">({user.role})</span>
+                </div>
+              )}
+              <ThemeToggle />
+              <Button variant="outline" size="sm" onClick={logout} data-testid="button-logout">
+                <LogOut className="h-4 w-4 mr-2" />
+                Logout
+              </Button>
+            </div>
+          </header>
+          <main className="flex-1 overflow-auto p-6">
+            <Router />
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <TooltipProvider>
-          <SidebarProvider style={style as React.CSSProperties}>
-            <div className="flex h-screen w-full">
-              <AppSidebar />
-              <div className="flex flex-col flex-1 overflow-hidden">
-                <header className="flex items-center justify-between p-4 border-b">
-                  <SidebarTrigger data-testid="button-sidebar-toggle" />
-                  <ThemeToggle />
-                </header>
-                <main className="flex-1 overflow-auto p-6">
-                  <Router />
-                </main>
-              </div>
-            </div>
-          </SidebarProvider>
-          <Toaster />
-        </TooltipProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <AppContent />
+            <Toaster />
+          </TooltipProvider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

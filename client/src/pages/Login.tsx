@@ -5,20 +5,36 @@ import { Label } from "@/components/ui/label";
 import { Package } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [, setLocation] = useLocation();
+  const { login } = useAuth();
+  const { toast } = useToast();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // todo: remove mock functionality - replace with real authentication
-    if (username === "Sairoot" && password === "Sai@101") {
-      console.log("Login successful");
+    setIsLoading(true);
+    
+    try {
+      await login(username, password);
+      toast({
+        title: "Login successful",
+        description: "Welcome back!",
+      });
       setLocation("/");
-    } else {
-      alert("Invalid credentials. Use username: Sairoot, password: Sai@101");
+    } catch (error) {
+      toast({
+        title: "Login failed",
+        description: "Invalid username or password",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -46,6 +62,7 @@ export default function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 data-testid="input-username"
+                disabled={isLoading}
                 required
               />
             </div>
@@ -58,11 +75,12 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 data-testid="input-password"
+                disabled={isLoading}
                 required
               />
             </div>
-            <Button type="submit" className="w-full" data-testid="button-login">
-              Sign In
+            <Button type="submit" className="w-full" data-testid="button-login" disabled={isLoading}>
+              {isLoading ? "Signing in..." : "Sign In"}
             </Button>
             <p className="text-xs text-center text-muted-foreground">
               Default credentials: Sairoot / Sai@101

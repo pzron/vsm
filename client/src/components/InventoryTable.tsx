@@ -9,31 +9,50 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ArrowUpCircle, ArrowDownCircle, Edit2, Search, Plus } from "lucide-react";
-import { useState } from "react";
-
-interface InventoryItem {
-  id: string;
-  product: string;
-  sku: string;
-  category: string;
-  currentStock: number;
-  minStock: number;
-  value: string;
-  lastAdjusted: string;
-  adjustedBy: string;
-}
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowUpCircle, ArrowDownCircle, Edit2, Search } from "lucide-react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { Product } from "@shared/schema";
+import { formatDistanceToNow } from "date-fns";
 
 export function InventoryTable() {
   const [search, setSearch] = useState("");
 
-  // todo: remove mock functionality
-  const items: InventoryItem[] = [
-    { id: "1", product: "Wireless Mouse", sku: "WM-001", category: "Electronics", currentStock: 45, minStock: 20, value: "$1,349.55", lastAdjusted: "2 hours ago", adjustedBy: "John Doe" },
-    { id: "2", product: "USB-C Cable 2m", sku: "UC-002", category: "Accessories", currentStock: 8, minStock: 25, value: "$103.92", lastAdjusted: "1 day ago", adjustedBy: "Jane Smith" },
-    { id: "3", product: "Mechanical Keyboard", sku: "MK-003", category: "Electronics", currentStock: 8, minStock: 15, value: "$719.92", lastAdjusted: "3 days ago", adjustedBy: "Mike Chen" },
-    { id: "4", product: "Desk Lamp LED", sku: "DL-004", category: "Furniture", currentStock: 0, minStock: 10, value: "$0.00", lastAdjusted: "1 week ago", adjustedBy: "Sarah Johnson" },
-  ];
+  const { data: products, isLoading } = useQuery<Product[]>({
+    queryKey: ["/api/products"],
+  });
+
+  const filteredProducts = useMemo(() => {
+    if (!products) return [];
+    if (!search) return products;
+    
+    const searchLower = search.toLowerCase();
+    return products.filter(
+      (product) =>
+        product.name.toLowerCase().includes(searchLower) ||
+        product.sku.toLowerCase().includes(searchLower) ||
+        product.category.toLowerCase().includes(searchLower)
+    );
+  }, [products, search]);
+
+  const formatCurrency = (value: string | null) => {
+    if (!value) return "$0.00";
+    const num = parseFloat(value);
+    return `$${num.toFixed(2)}`;
+  };
+
+  const calculateValue = (currentStock: number, retailPrice: string | null) => {
+    if (!retailPrice) return "$0.00";
+    const price = parseFloat(retailPrice);
+    const total = currentStock * price;
+    return `$${total.toFixed(2)}`;
+  };
+
+  const getLastAdjusted = (createdAt: Date, updatedAt: Date) => {
+    const date = updatedAt || createdAt;
+    return formatDistanceToNow(new Date(date), { addSuffix: true });
+  };
 
   const getStockStatus = (current: number, min: number) => {
     if (current === 0) return { label: "Out of Stock", variant: "destructive" as const };
@@ -83,30 +102,51 @@ export function InventoryTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((item) => {
-              const status = getStockStatus(item.currentStock, item.minStock);
-              return (
-                <TableRow key={item.id} data-testid={`row-inventory-${item.id}`}>
-                  <TableCell className="font-medium">{item.product}</TableCell>
-                  <TableCell className="font-mono text-sm">{item.sku}</TableCell>
-                  <TableCell>{item.category}</TableCell>
-                  <TableCell className="font-mono font-semibold">{item.currentStock}</TableCell>
-                  <TableCell className="font-mono text-muted-foreground">{item.minStock}</TableCell>
-                  <TableCell className="font-mono">{item.value}</TableCell>
-                  <TableCell>
-                    <Badge variant={status.variant} className={status.color}>
-                      {status.label}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm">
-                      <div className="text-muted-foreground">{item.lastAdjusted}</div>
-                      <div className="text-xs text-muted-foreground">by {item.adjustedBy}</div>
-                    </div>
-                  </TableCell>
+            {isLoading ? (
+              Array.from({ length: 5 }).map((_, index) => (
+                <TableRow key={index}>
+                  <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                 </TableRow>
-              );
-            })}
+              ))
+            ) : filteredProducts && filteredProducts.length > 0 ? (
+              filteredProducts.map((item) => {
+                const status = getStockStatus(item.currentStock, item.minStock);
+                return (
+                  <TableRow key={item.id} data-testid={`row-inventory-${item.id}`}>
+                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="font-mono text-sm">{item.sku}</TableCell>
+                    <TableCell>{item.category}</TableCell>
+                    <TableCell className="font-mono font-semibold">{item.currentStock}</TableCell>
+                    <TableCell className="font-mono text-muted-foreground">{item.minStock}</TableCell>
+                    <TableCell className="font-mono">{calculateValue(item.currentStock, item.retailPrice)}</TableCell>
+                    <TableCell>
+                      <Badge variant={status.variant} className={status.color}>
+                        {status.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        <div className="text-muted-foreground">{getLastAdjusted(item.createdAt, item.updatedAt)}</div>
+                        <div className="text-xs text-muted-foreground">by System</div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            ) : (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  {search ? "No inventory items found matching your search." : "No inventory items available."}
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </div>
