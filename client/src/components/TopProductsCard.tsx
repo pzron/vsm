@@ -1,22 +1,38 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-
-interface TopProduct {
-  id: string;
-  name: string;
-  sold: number;
-  revenue: string;
-  category: string;
-}
+import { useQuery } from "@tanstack/react-query";
+import type { Invoice, Product } from "@shared/schema";
 
 export function TopProductsCard() {
-  // todo: remove mock functionality
-  const products: TopProduct[] = [
-    { id: "1", name: "Wireless Mouse", sold: 145, revenue: "$4,345", category: "Electronics" },
-    { id: "2", name: "USB-C Cable 2m", sold: 238, revenue: "$3,089", category: "Accessories" },
-    { id: "3", name: "Mechanical Keyboard", sold: 67, revenue: "$6,023", category: "Electronics" },
-    { id: "4", name: "Notebook A5", sold: 412, revenue: "$2,055", category: "Stationery" },
-  ];
+  const { data: invoices = [] } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });
+  const { data: products = [] } = useQuery<Product[]>({ queryKey: ["/api/products"] });
+
+  const map = new Map<string, { sold: number; revenue: number }>();
+  for (const inv of invoices) {
+    const items = inv.items as any[];
+    for (const it of items) {
+      const pid = it.productId as string;
+      const qty = Number(it.quantity || 0);
+      const price = parseFloat(it.price || "0");
+      const acc = map.get(pid) || { sold: 0, revenue: 0 };
+      acc.sold += qty;
+      acc.revenue += qty * price;
+      map.set(pid, acc);
+    }
+  }
+  const rows = Array.from(map.entries())
+    .map(([pid, agg]) => {
+      const p = products.find(pp => pp.id === pid);
+      return {
+        id: pid,
+        name: p?.name || pid,
+        category: p?.category || "",
+        sold: agg.sold,
+        revenue: agg.revenue,
+      };
+    })
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 4);
 
   return (
     <Card data-testid="card-top-products">
@@ -25,7 +41,7 @@ export function TopProductsCard() {
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {products.map((product, index) => (
+          {rows.map((product, index) => (
             <div
               key={product.id}
               className="flex items-center justify-between p-3 rounded-md border hover-elevate"
@@ -43,7 +59,7 @@ export function TopProductsCard() {
                   </div>
                 </div>
               </div>
-              <span className="font-mono font-semibold">{product.revenue}</span>
+              <span className="font-mono font-semibold">${product.revenue.toFixed(2)}</span>
             </div>
           ))}
         </div>

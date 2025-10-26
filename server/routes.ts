@@ -3,8 +3,53 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertUserSchema, insertProductSchema, insertCustomerSchema, insertInvoiceSchema, insertInventoryAdjustmentSchema, insertRolePermissionSchema } from "@shared/schema";
 import bcrypt from "bcrypt";
+import multer from "multer";
+import fs from "fs";
+import path from "path";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // File Uploads (Product images)
+  const uploadsDir = path.resolve("uploads");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const upload = multer({ dest: uploadsDir });
+
+  app.post("/api/upload", upload.single("file"), async (req, res) => {
+    try {
+      const file = (req as any).file as { filename: string } | undefined;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const fileUrl = `/uploads/${file.filename}`;
+      res.json({ url: fileUrl });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
+
+  app.patch("/api/invoices/:id", async (req, res) => {
+    try {
+      if (!(await requirePermission(req, res, "Invoices", "edit"))) return;
+      const invoice = await storage.updateInvoice(req.params.id, req.body);
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (error) {
+      res.status(400).json({ error: "Failed to update invoice" });
+    }
+  });
+
+  app.delete("/api/invoices/:id", async (req, res) => {
+    try {
+      if (!(await requirePermission(req, res, "Invoices", "delete"))) return;
+      await storage.deleteInvoice(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invoice" });
+    }
+  });
   
   // Authentication Routes
   app.post("/api/auth/login", async (req, res) => {
@@ -24,17 +69,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const rolePermissions = await storage.getRolePermission(user.role);
       
       const { password: _, ...userWithoutPassword } = user;
+      (req as any).session.userId = user.id;
+      (req as any).session.role = user.role;
       res.json({ user: userWithoutPassword, permissions: rolePermissions?.permissions || {} });
     } catch (error) {
       res.status(500).json({ error: "Internal server error" });
     }
   });
 
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const s = (req as any).session;
+      if (!s) return res.json({ success: true });
+      s.destroy(() => {
+        res.json({ success: true });
+      });
+    } catch {
+      res.json({ success: true });
+    }
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const userId = (req as any).session?.userId as string | undefined;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const user = await storage.getUser(userId);
+      if (!user) return res.status(401).json({ error: "Unauthorized" });
+      const rolePermissions = await storage.getRolePermission(user.role);
+      const { password: _, ...userWithoutPassword } = user;
+      res.json({ user: userWithoutPassword, permissions: rolePermissions?.permissions || {} });
+    } catch (error) {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  function requireAuth(req: any, res: any, next: any) {
+    if (req.session && req.session.userId) return next();
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/auth/login" || req.path === "/auth/logout") return next();
+    return requireAuth(req, res, next);
+  });
+
+  async function requirePermission(req: any, res: any, module: string, action: "view"|"add"|"edit"|"delete") {
+    const role = req.session?.role as string | undefined;
+    if (!role) {
+      res.status(401).json({ error: "Unauthorized" });
+      return false;
+    }
+    const rolePerm = await storage.getRolePermission(role);
+    const mod = (rolePerm?.permissions as any)?.[module];
+    if (!mod || !mod[action]) {
+      res.status(403).json({ error: "Forbidden" });
+      return false;
+    }
+    return true;
+  }
+
   // Registration endpoint removed for security - staff should be created through admin panel only
 
   // Product Routes
   app.get("/api/products", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Products", "view"))) return;
       const { search } = req.query;
       if (search && typeof search === "string") {
         const products = await storage.searchProducts(search);
@@ -50,6 +149,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/products/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Products", "view"))) return;
       const product = await storage.getProduct(req.params.id);
       if (!product) {
         return res.status(404).json({ error: "Product not found" });
@@ -62,6 +162,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/products/barcode/:barcode", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Products", "view"))) return;
       const product = await storage.getProductByBarcode(req.params.barcode);
       if (!product) {
         return res.status(404).json({ error: "Product not found" });
@@ -74,6 +175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/products", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Products", "add"))) return;
       const validatedData = insertProductSchema.parse(req.body);
       const product = await storage.createProduct(validatedData);
       res.json(product);
@@ -84,6 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/products/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Products", "edit"))) return;
       const product = await storage.updateProduct(req.params.id, req.body);
       if (!product) {
         return res.status(404).json({ error: "Product not found" });
@@ -96,6 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/products/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Products", "delete"))) return;
       await storage.deleteProduct(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -106,6 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Customer Routes
   app.get("/api/customers", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Customers", "view"))) return;
       const { search } = req.query;
       if (search && typeof search === "string") {
         const customers = await storage.searchCustomers(search);
@@ -121,6 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/customers/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Customers", "view"))) return;
       const customer = await storage.getCustomer(req.params.id);
       if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
@@ -133,28 +239,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/customers", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Customers", "add"))) return;
       const validatedData = insertCustomerSchema.parse(req.body);
       const customer = await storage.createCustomer(validatedData);
       res.json(customer);
-    } catch (error) {
+    } catch (error: any) {
+      if (error && String(error.message) === "username_taken") {
+        return res.status(409).json({ error: "Username already taken" });
+      }
       res.status(400).json({ error: "Failed to create customer" });
     }
   });
 
   app.patch("/api/customers/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Customers", "edit"))) return;
       const customer = await storage.updateCustomer(req.params.id, req.body);
       if (!customer) {
         return res.status(404).json({ error: "Customer not found" });
       }
       res.json(customer);
-    } catch (error) {
+    } catch (error: any) {
+      if (error && String(error.message) === "username_taken") {
+        return res.status(409).json({ error: "Username already taken" });
+      }
       res.status(400).json({ error: "Failed to update customer" });
     }
   });
 
   app.delete("/api/customers/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Customers", "delete"))) return;
       await storage.deleteCustomer(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -165,6 +280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice Routes
   app.get("/api/invoices", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Invoices", "view"))) return;
       const { startDate, endDate, staffId } = req.query;
       
       if (startDate && endDate) {
@@ -187,6 +303,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/invoices/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Invoices", "view"))) return;
       const invoice = await storage.getInvoice(req.params.id);
       if (!invoice) {
         return res.status(404).json({ error: "Invoice not found" });
@@ -199,8 +316,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/invoices", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Invoices", "add"))) return;
       const validatedData = insertInvoiceSchema.parse(req.body);
-      
       const items = validatedData.items as any[];
       for (const item of items) {
         const product = await storage.getProduct(item.productId);
@@ -210,19 +327,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+      // Loyalty points: compute earned based on product.points if available
+      let earnedPoints = 0;
+      for (const item of items) {
+        const product = await storage.getProduct(item.productId);
+        if (product && (product as any).points != null) {
+          earnedPoints += ((product as any).points || 0) * (item.quantity || 0);
+        }
+      }
+      // If no product points configured, fallback to total/10
+      if (earnedPoints === 0) {
+        earnedPoints = Math.floor(parseFloat(validatedData.total as string) / 10);
+      }
+
+      // Handle point redemption if provided: req.body.redeemPoints (integer)
+      const redeemPoints = typeof (req.body as any).redeemPoints === 'number' ? (req.body as any).redeemPoints : 0;
+      let adjustedTotal = parseFloat(validatedData.total as string);
+      if (validatedData.customerId && redeemPoints > 0) {
+        const customer = await storage.getCustomer(validatedData.customerId);
+        if (customer) {
+          const usable = Math.min(customer.loyaltyPoints, redeemPoints);
+          adjustedTotal = Math.max(0, adjustedTotal - usable);
+          (validatedData as any).total = adjustedTotal.toString();
+          (validatedData as any).redeemedPoints = usable;
+          // Deduct redeemed points now; will add earned later
+          await storage.updateCustomer(validatedData.customerId, {
+            loyaltyPoints: customer.loyaltyPoints - usable,
+          } as any);
+        }
+      }
+
       if (validatedData.customerId) {
         const customer = await storage.getCustomer(validatedData.customerId);
         if (customer) {
-          const total = parseFloat(validatedData.total as string);
+          const total = parseFloat((validatedData.total as string));
           const totalSpent = parseFloat(customer.totalSpent as string) + total;
-          const loyaltyPoints = customer.loyaltyPoints + Math.floor(total / 10);
-          
-          await storage.updateCustomer(validatedData.customerId, {
-            totalSpent: totalSpent.toString(),
-            loyaltyPoints,
-            lastVisit: new Date(),
-          });
+          const loyaltyPoints = (customer.loyaltyPoints || 0) + earnedPoints;
+          await storage.updateCustomer(validatedData.customerId, { totalSpent: totalSpent.toString(), loyaltyPoints, lastVisit: new Date() } as any);
         }
       }
       
@@ -236,6 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Inventory Adjustment Routes
   app.get("/api/inventory/adjustments", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Inventory", "view"))) return;
       const { productId } = req.query;
       if (productId) {
         const adjustments = await storage.getInventoryAdjustmentsByProduct(productId as string);
@@ -251,6 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/inventory/adjustments", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Inventory", "add"))) return;
       const validatedData = insertInventoryAdjustmentSchema.parse(req.body);
       
       const product = await storage.getProduct(validatedData.productId);
@@ -272,6 +415,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Staff/User Routes
   app.get("/api/staff", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Staff", "view"))) return;
       const users = await storage.getAllUsers();
       const usersWithoutPasswords = users.map(({ password, ...user }) => user);
       res.json(usersWithoutPasswords);
@@ -282,6 +426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/staff/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Staff", "view"))) return;
       const user = await storage.getUser(req.params.id);
       if (!user) {
         return res.status(404).json({ error: "Staff member not found" });
@@ -295,9 +440,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/staff", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Staff", "add"))) return;
       const validatedData = insertUserSchema.parse(req.body);
       
-      const allowedRoles = ["Admin", "Manager", "Cashier", "Accountant"];
+      const allowedRoles = ["Admin", "Manager", "Cashier", "Accountant", "Office Member"];
       if (!validatedData.role || !allowedRoles.includes(validatedData.role)) {
         return res.status(400).json({ error: "Invalid role" });
       }
@@ -317,10 +463,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/staff/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Staff", "edit"))) return;
       const updateData = { ...req.body };
       
       if (updateData.role) {
-        const allowedRoles = ["Admin", "Manager", "Cashier", "Accountant"];
+        const allowedRoles = ["Admin", "Manager", "Cashier", "Accountant", "Office Member"];
         if (!allowedRoles.includes(updateData.role)) {
           return res.status(400).json({ error: "Invalid role" });
         }
@@ -343,6 +490,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/staff/:id", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Staff", "delete"))) return;
       await storage.deleteUser(req.params.id);
       res.json({ success: true });
     } catch (error) {
@@ -353,6 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Role Permission Routes
   app.get("/api/roles", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Settings", "view"))) return;
       const roles = await storage.getAllRolePermissions();
       res.json(roles);
     } catch (error) {
@@ -362,6 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/roles/:role", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Settings", "view"))) return;
       const rolePermission = await storage.getRolePermission(req.params.role);
       if (!rolePermission) {
         return res.status(404).json({ error: "Role not found" });
@@ -374,6 +524,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/roles", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Settings", "add"))) return;
       const validatedData = insertRolePermissionSchema.parse(req.body);
       const rolePermission = await storage.createRolePermission(validatedData);
       res.json(rolePermission);
@@ -384,6 +535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.patch("/api/roles/:role", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Settings", "edit"))) return;
       const rolePermission = await storage.updateRolePermission(req.params.role, req.body);
       if (!rolePermission) {
         return res.status(404).json({ error: "Role not found" });
@@ -397,6 +549,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Analytics Routes
   app.get("/api/analytics/dashboard", async (req, res) => {
     try {
+      if (!(await requirePermission(req, res, "Reports", "view"))) return;
       const products = await storage.getAllProducts();
       const customers = await storage.getAllCustomers();
       const invoices = await storage.getAllInvoices();

@@ -32,17 +32,63 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [permissions, setPermissions] = useState<Permissions>({});
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const storedUser = localStorage.getItem("user");
+      return storedUser ? JSON.parse(storedUser) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [permissions, setPermissions] = useState<Permissions>(() => {
+    try {
+      const storedPermissions = localStorage.getItem("permissions");
+      return storedPermissions ? JSON.parse(storedPermissions) : {};
+    } catch {
+      return {} as Permissions;
+    }
+  });
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    const storedPermissions = localStorage.getItem("permissions");
-    if (storedUser && storedPermissions) {
-      setUser(JSON.parse(storedUser));
-      setPermissions(JSON.parse(storedPermissions));
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { method: "GET" });
+        if (!res.ok) throw new Error("unauth");
+        const data = await res.json();
+        if (!cancelled) {
+          setUser(data.user);
+          setPermissions(data.permissions || {});
+          localStorage.setItem("user", JSON.stringify(data.user));
+          localStorage.setItem("permissions", JSON.stringify(data.permissions || {}));
+        }
+      } catch {
+        if (!cancelled) {
+          setUser(null);
+          setPermissions({} as Permissions);
+          localStorage.removeItem("user");
+          localStorage.removeItem("permissions");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    // keep state and localStorage in sync if changed in other tabs
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "user") {
+        setUser(e.newValue ? JSON.parse(e.newValue) : null);
+      }
+      if (e.key === "permissions") {
+        setPermissions(e.newValue ? JSON.parse(e.newValue) : {});
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const login = async (username: string, password: string) => {
@@ -65,16 +111,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    setUser(null);
-    setPermissions({});
-    localStorage.removeItem("user");
-    localStorage.removeItem("permissions");
-    setLocation("/login");
+    fetch("/api/auth/logout", { method: "POST" }).finally(() => {
+      setUser(null);
+      setPermissions({} as Permissions);
+      localStorage.removeItem("user");
+      localStorage.removeItem("permissions");
+      setLocation("/login");
+    });
   };
 
   const hasPermission = (module: string, action: string) => {
-    if (!permissions[module]) return false;
-    return permissions[module][action as keyof typeof permissions[typeof module]] || false;
+    const mod = permissions[module] as any;
+    if (!mod) return false;
+    return Boolean(mod[action]);
   };
 
   return (

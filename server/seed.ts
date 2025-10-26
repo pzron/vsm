@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { storage } from "./storage";
 import bcrypt from "bcrypt";
 import ws from "ws";

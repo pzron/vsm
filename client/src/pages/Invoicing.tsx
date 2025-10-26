@@ -1,6 +1,4 @@
 import { InvoiceForm } from "@/components/InvoiceForm";
-import { Button } from "@/components/ui/button";
-import { FileText } from "lucide-react";
 
 export default function Invoicing() {
   return (
@@ -10,10 +8,7 @@ export default function Invoicing() {
           <h1 className="text-3xl font-bold">Invoicing</h1>
           <p className="text-muted-foreground">Create and manage invoices</p>
         </div>
-        <Button variant="outline" data-testid="button-view-invoices">
-          <FileText className="h-4 w-4 mr-2" />
-          View All Invoices
-        </Button>
+        {/* Removed View All Invoices button as per request */}
       </div>
 
       <div className="max-w-4xl">

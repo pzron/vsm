@@ -13,15 +13,47 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Edit, Trash2, Search, Plus, DollarSign, Users } from "lucide-react";
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@shared/schema";
+import { AddStaffDialog } from "@/components/AddStaffDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiRequest } from "@/lib/queryClient";
+import { EditStaffDialog } from "@/components/EditStaffDialog";
+import type { Invoice } from "@shared/schema";
 
 export function StaffTable() {
   const [search, setSearch] = useState("");
+  const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: staff = [], isLoading } = useQuery<User[]>({
     queryKey: ["/api/staff"],
   });
+  const { data: invoices = [] } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });
+
+  const invoiceCountByStaff = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const inv of invoices) {
+      const sid = String((inv as any).staffId || "");
+      if (!sid) continue;
+      map.set(sid, (map.get(sid) || 0) + 1);
+    }
+    return map;
+  }, [invoices]);
+
+  const salesByStaff = useMemo(() => {
+    const totals = new Map<string, number>();
+    const profits = new Map<string, number>();
+    for (const inv of invoices) {
+      const sid = String((inv as any).staffId || "");
+      if (!sid) continue;
+      const total = parseFloat(inv.total as string);
+      const profit = (inv.items as any[]).reduce((sum, it) => sum + (parseFloat(it.price) - parseFloat(it.costPrice || "0")) * (it.quantity || 0), 0);
+      totals.set(sid, (totals.get(sid) || 0) + total);
+      profits.set(sid, (profits.get(sid) || 0) + profit);
+    }
+    return { totals, profits };
+  }, [invoices]);
 
   const filteredStaff = useMemo(() => {
     if (!search) return staff;
@@ -29,6 +61,7 @@ export function StaffTable() {
     const searchLower = search.toLowerCase();
     return staff.filter((employee) => 
       employee.fullName.toLowerCase().includes(searchLower) ||
+      employee.username.toLowerCase().includes(searchLower) ||
       employee.role.toLowerCase().includes(searchLower) ||
       employee.email?.toLowerCase().includes(searchLower) ||
       employee.phone?.toLowerCase().includes(searchLower)
@@ -69,10 +102,16 @@ export function StaffTable() {
             data-testid="input-search-staff"
           />
         </div>
-        <Button data-testid="button-add-staff">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Staff
-        </Button>
+        {hasPermission("Staff", "add") && (
+          <AddStaffDialog
+            trigger={
+              <Button data-testid="button-add-staff">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Staff
+              </Button>
+            }
+          />
+        )}
       </div>
 
       <div className="rounded-md border">
@@ -80,9 +119,13 @@ export function StaffTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Employee</TableHead>
+              <TableHead>Username</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Monthly Salary</TableHead>
+              <TableHead>Total Paid</TableHead>
+              <TableHead>Total Sales</TableHead>
+              <TableHead>Profit</TableHead>
               <TableHead>Invoices Created</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -148,6 +191,7 @@ export function StaffTable() {
                         <span className="font-medium">{employee.fullName}</span>
                       </div>
                     </TableCell>
+                    <TableCell className="font-mono text-sm text-muted-foreground">@{employee.username}</TableCell>
                     <TableCell>
                       <Badge variant={getRoleColor(employee.role)}>
                         {employee.role}
@@ -165,7 +209,15 @@ export function StaffTable() {
                         <span className="font-mono font-semibold">{formatSalary(employee.salary)}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="font-mono">0</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <DollarSign className="h-3 w-3 text-muted-foreground" />
+                        <span className="font-mono font-semibold">{formatSalary((employee as any).totalPaid || "0")}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono font-semibold">${(salesByStaff.totals.get(employee.id) || 0).toFixed(2)}</TableCell>
+                    <TableCell className="font-mono">${(salesByStaff.profits.get(employee.id) || 0).toFixed(2)}</TableCell>
+                    <TableCell className="font-mono">{invoiceCountByStaff.get(employee.id) || 0}</TableCell>
                     <TableCell>
                       <Badge variant={employee.status === "Active" ? "default" : "secondary"}>
                         {employee.status}
@@ -173,22 +225,48 @@ export function StaffTable() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-edit-${employee.id}`}
-                          onClick={() => console.log("Edit", employee.id)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-delete-${employee.id}`}
-                          onClick={() => console.log("Delete", employee.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {hasPermission("Staff", "edit") && (
+                          <EditStaffDialog
+                            user={employee}
+                            trigger={
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                data-testid={`button-note-${employee.id}`}
+                              >
+                                Note
+                              </Button>
+                            }
+                          />
+                        )}
+                        {hasPermission("Staff", "edit") && (
+                          <EditStaffDialog
+                            user={employee}
+                            trigger={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                data-testid={`button-edit-${employee.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                        )}
+                        {hasPermission("Staff", "delete") && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-delete-${employee.id}`}
+                            onClick={async () => {
+                              if (!confirm("Delete this staff member?")) return;
+                              await apiRequest("DELETE", `/api/staff/${employee.id}`);
+                              await queryClient.invalidateQueries({ queryKey: ["/api/staff"] });
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

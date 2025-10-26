@@ -19,9 +19,20 @@ import { format } from "date-fns";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-export function ReportsFilters() {
+export type ReportFilters = {
+  dateFrom?: Date;
+  dateTo?: Date;
+  category?: string;
+  payment?: string;
+  staffId?: string;
+};
+
+export function ReportsFilters({ onGenerate }: { onGenerate?: (filters: ReportFilters) => void }) {
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
+  const [category, setCategory] = useState<string | undefined>();
+  const [payment, setPayment] = useState<string | undefined>();
+  const [staffId, setStaffId] = useState<string | undefined>();
 
   return (
     <Card data-testid="card-reports-filters">
@@ -29,7 +40,7 @@ export function ReportsFilters() {
         <CardTitle className="text-xl font-semibold">Generate Report</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>From Date</Label>
             <Popover>
@@ -84,10 +95,10 @@ export function ReportsFilters() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="category">Category</Label>
-            <Select>
+            <Select value={category} onValueChange={setCategory}>
               <SelectTrigger id="category" data-testid="select-category">
                 <SelectValue placeholder="All categories" />
               </SelectTrigger>
@@ -102,7 +113,7 @@ export function ReportsFilters() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="payment">Payment Method</Label>
-            <Select>
+            <Select value={payment} onValueChange={setPayment}>
               <SelectTrigger id="payment" data-testid="select-payment">
                 <SelectValue placeholder="All methods" />
               </SelectTrigger>
@@ -119,7 +130,7 @@ export function ReportsFilters() {
 
         <div className="space-y-2">
           <Label htmlFor="staff">Staff Member</Label>
-          <Select>
+          <Select value={staffId} onValueChange={setStaffId}>
             <SelectTrigger id="staff" data-testid="select-staff">
               <SelectValue placeholder="All staff" />
             </SelectTrigger>
@@ -132,16 +143,20 @@ export function ReportsFilters() {
           </Select>
         </div>
 
-        <div className="flex gap-2 pt-2">
-          <Button className="flex-1" data-testid="button-generate-report">
+        <div className="flex flex-wrap gap-2 pt-2">
+          <Button
+            className="flex-1 min-w-[160px]"
+            data-testid="button-generate-report"
+            onClick={() => onGenerate?.({ dateFrom, dateTo, category, payment, staffId })}
+          >
             <FileText className="h-4 w-4 mr-2" />
             Generate Report
           </Button>
-          <Button variant="outline" data-testid="button-export-pdf">
+          <Button variant="outline" className="min-w-[140px]" data-testid="button-export-pdf">
             <Download className="h-4 w-4 mr-2" />
             Export PDF
           </Button>
-          <Button variant="outline" data-testid="button-export-csv">
+          <Button variant="outline" className="min-w-[140px]" data-testid="button-export-csv">
             <Download className="h-4 w-4 mr-2" />
             Export CSV
           </Button>

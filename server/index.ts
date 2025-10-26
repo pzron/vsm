@@ -1,10 +1,39 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
+import path from "path";
+import session from "express-session";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import createMemoryStore from "memorystore";
 
 const app = express();
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "same-origin" },
+  // Turn off CSP for now to ensure Vite preamble and inline scripts execute.
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+
+app.set('trust proxy', 1);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+const MemoryStore = createMemoryStore(session);
+app.use(session({
+  store: new MemoryStore({ checkPeriod: 86400000 }),
+  secret: process.env.SESSION_SECRET || "change-me",
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: app.get('env') === 'production',
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  }
+}));
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -39,6 +68,9 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // serve uploaded files
+  app.use("/uploads", express.static(path.resolve("uploads")));
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -64,7 +96,6 @@ app.use((req, res, next) => {
   server.listen({
     port,
     host: "0.0.0.0",
-    reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
   });

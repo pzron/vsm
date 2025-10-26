@@ -12,13 +12,18 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Edit, Trash2, Search, Plus, Star, UserX } from "lucide-react";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Customer } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
+import { CustomerDialog } from "@/components/CustomerDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiRequest } from "@/lib/queryClient";
 
 export function CustomerTable() {
   const [search, setSearch] = useState("");
+  const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
 
   const { data: customers, isLoading } = useQuery<Customer[]>({
     queryKey: search ? [`/api/customers?search=${encodeURIComponent(search)}`] : ["/api/customers"],
@@ -29,10 +34,20 @@ export function CustomerTable() {
       case "VIP": return "default";
       case "Member": return "secondary";
       case "Wholesale": return "outline";
+      case "Dealer": return "secondary";
+      case "Depo": return "default";
       case "Retail": return "outline";
       default: return "outline";
     }
   };
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const s = params.get("search") || "";
+      setSearch(s);
+    } catch {}
+  }, []);
 
   const formatCurrency = (amount: string | number) => {
     const numAmount = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -64,10 +79,16 @@ export function CustomerTable() {
             data-testid="input-search-customers"
           />
         </div>
-        <Button data-testid="button-add-customer">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Customer
-        </Button>
+        {hasPermission("Customers", "add") && (
+          <CustomerDialog
+            trigger={
+              <Button data-testid="button-add-customer">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Customer
+              </Button>
+            }
+          />
+        )}
       </div>
 
       <div className="rounded-md border">
@@ -130,11 +151,15 @@ export function CustomerTable() {
                         ? "No customers match your search criteria. Try a different search term."
                         : "Get started by adding your first customer."}
                     </p>
-                    {!search && (
-                      <Button data-testid="button-add-first-customer">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Customer
-                      </Button>
+                    {!search && hasPermission("Customers", "add") && (
+                      <CustomerDialog
+                        trigger={
+                          <Button data-testid="button-add-first-customer">
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Customer
+                          </Button>
+                        }
+                      />
                     )}
                   </div>
                 </TableCell>
@@ -177,22 +202,34 @@ export function CustomerTable() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-edit-${customer.id}`}
-                          onClick={() => console.log("Edit", customer.id)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-delete-${customer.id}`}
-                          onClick={() => console.log("Delete", customer.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {hasPermission("Customers", "edit") && (
+                          <CustomerDialog
+                            customer={customer}
+                            trigger={
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                data-testid={`button-edit-${customer.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                            }
+                          />
+                        )}
+                        {hasPermission("Customers", "delete") && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-delete-${customer.id}`}
+                            onClick={async () => {
+                              if (!confirm("Delete this customer?")) return;
+                              await apiRequest("DELETE", `/api/customers/${customer.id}`);
+                              await queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

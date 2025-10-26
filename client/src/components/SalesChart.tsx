@@ -1,27 +1,74 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { useQuery } from "@tanstack/react-query";
+import type { Invoice, Customer } from "@shared/schema";
+import { startOfDay, subDays, subMonths, startOfYear } from "date-fns";
 
-export function SalesChart() {
-  // todo: remove mock functionality
-  const dailyData = [
-    { day: "Mon", sales: 4200, profit: 1800 },
-    { day: "Tue", sales: 3800, profit: 1600 },
-    { day: "Wed", sales: 5100, profit: 2300 },
-    { day: "Thu", sales: 4600, profit: 2000 },
-    { day: "Fri", sales: 6200, profit: 2800 },
-    { day: "Sat", sales: 7800, profit: 3600 },
-    { day: "Sun", sales: 5400, profit: 2400 },
-  ];
+export function SalesChart({ filters }: { filters?: { timeframe: "week" | "month" | "year"; customerType: string } }) {
+  const { data: invoices = [] } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });
+  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
 
-  const monthlyData = [
-    { month: "Jan", sales: 45000, profit: 18000 },
-    { month: "Feb", sales: 52000, profit: 22000 },
-    { month: "Mar", sales: 48000, profit: 19500 },
-    { month: "Apr", sales: 61000, profit: 26000 },
-    { month: "May", sales: 55000, profit: 23500 },
-    { month: "Jun", sales: 67000, profit: 29000 },
-  ];
+  const last7: { day: string; sales: number; profit: number }[] = [];
+  const now = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    last7.push({ day: d.toLocaleDateString(undefined, { weekday: "short" }), sales: 0, profit: 0 });
+  }
+  const last6Months: { month: string; sales: number; profit: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    last6Months.push({ month: d.toLocaleDateString(undefined, { month: "short" }), sales: 0, profit: 0 });
+  }
+
+  // filter invoices by timeframe and customer type
+  let filtered = invoices.slice();
+  if (filters?.timeframe === "week") {
+    const since = subDays(startOfDay(new Date()), 6);
+    filtered = filtered.filter((inv) => new Date(inv.createdAt as any) >= since);
+  } else if (filters?.timeframe === "month") {
+    const since = subMonths(startOfDay(new Date()), 1);
+    filtered = filtered.filter((inv) => new Date(inv.createdAt as any) >= since);
+  } else if (filters?.timeframe === "year") {
+    const since = startOfYear(new Date());
+    filtered = filtered.filter((inv) => new Date(inv.createdAt as any) >= since);
+  }
+
+  if (filters && filters.customerType && filters.customerType !== "All") {
+    const byId = new Map(customers.map(c => [c.id, c]));
+    filtered = filtered.filter((inv) => {
+      const cid = (inv.customerId as any) as string | undefined;
+      const ct = cid ? byId.get(cid)?.type : (inv as any).customerType;
+      return ct === filters.customerType;
+    });
+  }
+
+  for (const inv of filtered) {
+    const created = new Date(inv.createdAt as any);
+    const invTotal = parseFloat(inv.total as string);
+    const items = inv.items as any[];
+    const invProfit = items.reduce((sum, it) => {
+      const price = parseFloat(it.price);
+      const cost = parseFloat(it.costPrice || "0");
+      return sum + (price - cost) * it.quantity;
+    }, 0);
+
+    // daily bucket
+    const dayLabel = created.toLocaleDateString(undefined, { weekday: "short" });
+    const daily = last7.find((d) => d.day === dayLabel);
+    if (daily) {
+      daily.sales += invTotal;
+      daily.profit += invProfit;
+    }
+    // monthly bucket
+    const monthLabel = created.toLocaleDateString(undefined, { month: "short" });
+    const monthly = last6Months.find((m) => m.month === monthLabel);
+    if (monthly) {
+      monthly.sales += invTotal;
+      monthly.profit += invProfit;
+    }
+  }
 
   return (
     <Card data-testid="card-sales-chart">
@@ -36,7 +83,7 @@ export function SalesChart() {
           </TabsList>
           <TabsContent value="daily">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={dailyData}>
+              <BarChart data={last7}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="day" className="text-xs" />
                 <YAxis className="text-xs" />
@@ -55,7 +102,7 @@ export function SalesChart() {
           </TabsContent>
           <TabsContent value="monthly">
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={monthlyData}>
+              <BarChart data={last6Months}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                 <XAxis dataKey="month" className="text-xs" />
                 <YAxis className="text-xs" />

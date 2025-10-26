@@ -10,18 +10,24 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowUpCircle, ArrowDownCircle, Edit2, Search } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Edit2, Search, FileText, AlertTriangle, Bell } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Product } from "@shared/schema";
+import type { Product, InventoryAdjustment } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
+import { InventoryAdjustDialog } from "@/components/InventoryAdjustDialog";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLocation } from "wouter";
 
 export function InventoryTable() {
   const [search, setSearch] = useState("");
+  const { hasPermission } = useAuth();
+  const [, setLocation] = useLocation();
 
   const { data: products, isLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
   });
+  const { data: adjustments = [] } = useQuery<InventoryAdjustment[]>({ queryKey: ["/api/inventory/adjustments"] });
 
   const filteredProducts = useMemo(() => {
     if (!products) return [];
@@ -60,8 +66,62 @@ export function InventoryTable() {
     return { label: "In Stock", variant: "secondary" as const };
   };
 
+  // Alerts & valuation
+  const lowStockCount = useMemo(() => (products || []).filter(p => p.currentStock < p.minStock).length, [products]);
+  const expirySoonCount = useMemo(() => (products || []).filter(p => p.expiryDate && ((new Date(p.expiryDate as any).getTime() - Date.now())/(1000*60*60*24)) <= 30 && ((new Date(p.expiryDate as any).getTime() - Date.now())/(1000*60*60*24)) >= 0).length, [products]);
+  const totalCostValuation = useMemo(() => (products || []).reduce((sum, p) => sum + (p.currentStock || 0) * parseFloat(String(p.costPrice || "0")), 0), [products]);
+  const categoryValuation = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of products || []) {
+      const cat = p.category || "";
+      const val = (p.currentStock || 0) * parseFloat(String(p.costPrice || "0"));
+      map.set(cat, (map.get(cat) || 0) + val);
+    }
+    return Array.from(map.entries()).sort((a,b)=>b[1]-a[1]);
+  }, [products]);
+
+  // Last adjustment per product
+  const lastAdjustmentByProduct = useMemo(() => {
+    const map = new Map<string, { when: string; by: string; reason?: string }>();
+    for (const a of adjustments) {
+      const prev = map.get(a.productId);
+      const current = new Date(a.createdAt as any).toISOString();
+      if (!prev || current > prev.when) {
+        map.set(a.productId, { when: current, by: a.adjustedByName, reason: a.reason || undefined });
+      }
+    }
+    return map;
+  }, [adjustments]);
+
   return (
     <div className="space-y-4" data-testid="inventory-table">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="p-3 rounded border flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Bell className="h-4 w-4" />Low Stock</div>
+          <div className="font-mono font-semibold">{lowStockCount}</div>
+        </div>
+        <div className="p-3 rounded border flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><AlertTriangle className="h-4 w-4" />Expiry Soon (30d)</div>
+          <div className="font-mono font-semibold">{expirySoonCount}</div>
+        </div>
+        <div className="p-3 rounded border flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">Total Inventory Value (Cost)</div>
+          <div className="font-mono font-semibold">${totalCostValuation.toFixed(2)}</div>
+        </div>
+      </div>
+      {categoryValuation.length > 0 && (
+        <div className="rounded border p-3">
+          <div className="text-sm font-medium mb-2">Category-wise Inventory Value (Cost)</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+            {categoryValuation.map(([cat, val]) => (
+              <div key={cat} className="flex items-center justify-between">
+                <span className="text-muted-foreground">{cat || 'Uncategorized'}</span>
+                <span className="font-mono">${val.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -73,17 +133,42 @@ export function InventoryTable() {
             data-testid="input-search-inventory"
           />
         </div>
-        <Button variant="outline" data-testid="button-stock-in">
-          <ArrowUpCircle className="h-4 w-4 mr-2" />
-          Stock In
-        </Button>
-        <Button variant="outline" data-testid="button-stock-out">
-          <ArrowDownCircle className="h-4 w-4 mr-2" />
-          Stock Out
-        </Button>
-        <Button data-testid="button-adjust-stock">
-          <Edit2 className="h-4 w-4 mr-2" />
-          Adjust Stock
+        {hasPermission("Inventory", "add") && (
+          <InventoryAdjustDialog
+            defaultType="Stock In"
+            trigger={
+              <Button variant="outline" data-testid="button-stock-in">
+                <ArrowUpCircle className="h-4 w-4 mr-2" />
+                Stock In
+              </Button>
+            }
+          />
+        )}
+        {hasPermission("Inventory", "add") && (
+          <InventoryAdjustDialog
+            defaultType="Stock Out"
+            trigger={
+              <Button variant="outline" data-testid="button-stock-out">
+                <ArrowDownCircle className="h-4 w-4 mr-2" />
+                Stock Out
+              </Button>
+            }
+          />
+        )}
+        {hasPermission("Inventory", "edit") && (
+          <InventoryAdjustDialog
+            defaultType="Adjust"
+            trigger={
+              <Button data-testid="button-adjust-stock">
+                <Edit2 className="h-4 w-4 mr-2" />
+                Adjust Stock
+              </Button>
+            }
+          />
+        )}
+        <Button variant="outline" onClick={() => setLocation("/reports")} data-testid="button-view-adjustments">
+          <FileText className="h-4 w-4 mr-2" />
+          View Adjustments
         </Button>
       </div>
 
@@ -134,7 +219,9 @@ export function InventoryTable() {
                     <TableCell>
                       <div className="text-sm">
                         <div className="text-muted-foreground">{getLastAdjusted(item.createdAt, item.updatedAt)}</div>
-                        <div className="text-xs text-muted-foreground">by System</div>
+                        <div className="text-xs text-muted-foreground">
+                          {lastAdjustmentByProduct.get(item.id)?.by ? `by ${lastAdjustmentByProduct.get(item.id)?.by}` : "by System"}
+                        </div>
                       </div>
                     </TableCell>
                   </TableRow>

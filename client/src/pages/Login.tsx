@@ -26,7 +26,25 @@ export default function Login() {
         title: "Login successful",
         description: "Welcome back!",
       });
-      setLocation("/");
+      try {
+        const perms = JSON.parse(localStorage.getItem("permissions") || "{}");
+        // route order by module availability
+        const routeOrder: Array<{ mod: string; path: string }> = [
+          { mod: "Dashboard", path: "/" },
+          { mod: "Invoicing", path: "/invoicing" },
+          { mod: "Products", path: "/products" },
+          { mod: "Inventory", path: "/inventory" },
+          { mod: "Customers", path: "/customers" },
+          { mod: "Sales", path: "/sales" },
+          { mod: "Reports", path: "/reports" },
+          { mod: "Staff", path: "/staff" },
+          { mod: "Settings", path: "/settings" },
+        ];
+        const dest = routeOrder.find(r => r.mod === "Dashboard" || (perms[r.mod] && perms[r.mod].view))?.path || "/";
+        setLocation(dest);
+      } catch {
+        setLocation("/");
+      }
     } catch (error) {
       toast({
         title: "Login failed",
@@ -82,9 +100,6 @@ export default function Login() {
             <Button type="submit" className="w-full" data-testid="button-login" disabled={isLoading}>
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Default credentials: Sairoot / Sai@101
-            </p>
           </form>
         </CardContent>
       </Card>
