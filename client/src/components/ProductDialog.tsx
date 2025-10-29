@@ -190,15 +190,15 @@ export function ProductDialog({
               ) : null}
             </div>
             <div className="space-y-1">
-              <Label>Retail Price</Label>
+              <Label>MRP</Label>
               <Input type="number" step="0.01" value={form.retailPrice} onChange={(e) => setForm(f => ({ ...f, retailPrice: e.target.value }))} required />
             </div>
             <div className="space-y-1">
-              <Label>Wholesale Price</Label>
+              <Label>repurches</Label>
               <Input type="number" step="0.01" value={form.wholesalePrice} onChange={(e) => setForm(f => ({ ...f, wholesalePrice: e.target.value }))} />
             </div>
             <div className="space-y-1">
-              <Label>VIP Price</Label>
+              <Label>special</Label>
               <Input type="number" step="0.01" value={form.vipPrice} onChange={(e) => setForm(f => ({ ...f, vipPrice: e.target.value }))} />
             </div>
             <div className="space-y-1">

@@ -1,0 +1,262 @@
+build a **modern, feature-rich, offline desktop store management app** with a **unique, icon-based dashboard** (charts, graphs, boxes, lines). This is very achievable with the right planning and AI-assisted development.
+
+---
+
+## ✅ Updated Feature List with Add-Ons
+
+Here’s a **full, expanded set** of features and modules, including **UI/UX enhancements** and **creative dashboard ideas**:
+---
+
+## 🔹 1. CORE BUSINESS MODULES
+
+### 🛍 Products Management
+* Add/edit/delete products with image
+
+* **Basic Details**: Product Name, SKU, Barcode
+* **Media**: Product Image (upload & preview)
+* **Classification**: Categories & Subcategories
+* **Unit Types**: pcs, kg, L, box, etc.
+* **Pricing**:
+
+  * Cost Price & Selling Price
+  * **Multi-tier Pricing**: Retail, Wholesale, Member
+  * Discounts for registered customers
+* **Stock Info**: Current Stock, Low Stock Threshold
+* **Expiry Date**: For perishables (optional)
+* **Tax per Item**: Optional tax enable/disable
+* **Status Toggle**: Enable/Disable for active sale
+* ** Admin can add any options, box, form etc
+
+---
+
+### 🧾 Invoice / Billing System
+
+* **Invoice Creation**:
+
+  * Add Products by barcode or search (auto add to list)
+*Add Items from Product List 
+  * Auto-calculate totals, taxes, discounts
+  * Auto-save invoice drafts
+* Per-sale invoice (printable- PDF, csv, email etc)
+* Discount (fixed or %)
+* Support for discounts (fixed or percentage-based))
+* Optional tax & fixed/percentage discount 
+* Customizable invoice template (with your store logo, color, templete)
+  * **Custom Invoice Templates**:
+
+    * Add store logo, address, custom fields, footnotes
+    * Add payment method icons (Cash, Mobile Bank, Card)
+* **Customer Attachment**:
+
+  * Choose or create customer inline
+  * Auto-apply customer-specific discounts
+  * Loyalty point auto-deduct (if enabled)
+* **Payments**:
+
+  * Full multi-mode support:
+
+    * Cash
+    * Bank
+    * Mobile Banking (bKash, GCash, etc.)
+    * Loyalty Points
+    * **combo Payments**: Cash + Bank, Bank + Points, etc.
+  * Custom Payment Split Entry
+* **Other Features**:
+
+  * Add Salesperson (auto-assign who billed)
+  * Add Payment Gateway Info + Notes (e.g., bank ref no.)
+  * Refund/Return linked to invoice
+  * Print, PDF, CSV, Email export options
+  * Admin can edit, delete, or change templates any time
+
+---
+
+### 📦 Inventory / Stock Management
+
+* **Live Stock Control**:
+
+  * Stock In / Out / Adjust
+  * Add via barcode scan
+  * Manual Adjustment Logs with reason
+* Add / Remove / Adjust inventory
+* **Notifications**:
+
+  * Low Stock Alerts (with thresholds)
+  * Expiry Alerts
+* **Stock Valuation Reports**:
+
+  * Total Inventory Value (Cost-based)
+  * Category/Product-wise stock value
+* **Logs**:
+
+  * Who added/adjusted stock
+  * Timestamped history for each product
+
+---
+
+### 👥 Customer Management
+
+* **Profile Details**: Name, Photo, Phone, Email, Address
+* **Customer Types**:
+
+  * Retail, Wholesale, VIP, Member
+* **ID Support**:
+
+  * Customer ID, userid, Loyalty Card ID
+* **Loyalty System**:
+
+  * Earn Points on Purchase
+  * Use Points to Pay (full/partial)
+  * Track Points Usage History
+* **Purchase History**: Linked to invoices
+* **Auto Discount by Type**: Set product-specific discounts per customer type
+* **Reminders**: Birthday, Anniversary, Special Day Alerts
+* **Defaults**: Preferred payment method
+* **Activity Logs**: Last visit, purchase summary
+
+---
+
+### 💰 Sales Module
+
+* **Sales Dashboard**:
+
+  * Daily / Weekly / Monthly / Yearly Sales
+  * Compare sales periods
+* **Sales Insights**:
+
+  * Most Sold Products
+  * Top Buyers
+  * Sales by Category/Product
+* **Profit & Cost Reports**:
+
+  * Gross Profit (Sale - Cost)
+  * Profit per Product
+* **Returns/Refunds Tracking**
+* **Cash Flow Summary**:
+
+  * Daily cash collected
+  * Total sales profit and daily full account details cost, earn, margin, cash (admin dashboard and permission by role)
+  * Bank/mobile/point breakdowns
+
+---
+
+### 📊 Reports & Analytics
+
+* **Visual Dashboards**:
+
+  * Revenue Chart: Line / Bar
+  * Category Sales: Pie Chart
+  * Payment Breakdown: Donut Chart
+  * Top Products / Customers Cards
+* Exportable Reports (PDF/CSV)
+* Filter by date, category, payment method
+* Most returned items
+* Category-based revenue breakdown
+* Day-by-day sales line chart
+* **Filters**:
+
+  * By Date Range, Category, Payment Type, Staff
+* **Export Options**:
+
+  * PDF
+  * CSV
+  * Printable Reports
+* **Inventory Reports**:
+
+  * Stock Level
+  * Expiry Near
+  * Overstock / Understock Products
+
+---
+
+## 🔐 2. ADMINISTRATION & SECURITY
+
+### 🧑‍💼 User Roles & Permissions
+
+* Role Types: Admin, Manager, Cashier, Stockist, Accountant
+* Define Permissions:
+
+  * View, Add, Edit, Delete for each module
+  * Access restriction per user/role
+  * Access specific modules (Sales, Invoice, Reports, etc.)
+
+* Only Admin can manage roles & settings
+
+### 🔐 Authentication & Security
+
+* **Login System**: Secure password login
+* **Auto Logout**: On inactivity (configurable)
+* **User Activity Log**:
+
+  * Who did what, when
+  * Which invoice, stock entry, report etc.
+* **Session Tracking**:
+
+  * Login time, Logout time
+  * Total time spent
+* **Backup & Restore**:
+
+  * Manual or Scheduled Backup
+  * Backup to local folder, USB drive, or network path
+
+---
+
+## 📋 3. EMPLOYEE / STAFF MANAGEMENT
+
+* **Employee List**: Name, Role, Contact Info, Photo
+* **Salary Records**:
+
+  * Monthly Salary
+  * Payment Log (Cash/Bank)
+* **Performance Notes**:
+
+  * Warning, Praise, Notes
+* **Linked to Sales**:
+
+  * Track invoices per employee
+  * Sales performance
+* **Attendance** Activity (Optional):
+
+  * Check-in/out manually or with PIN/ID
+
+---
+
+## 💡 4. ADVANCED FEATURES (SMART & OPTIONAL)
+
+* **AI Suggestions** *(optional plugin)*:
+
+  * Predict next stock refill needs
+* Recommend stock refill based on past trends
+  * Show sales projections
+  * Sales forecast for upcoming week/month
+* **Smart Search**:
+
+  * Typo-tolerant, fuzzy search
+  * Search by barcode, name, category, SKU
+* **Auto Backup System**:
+
+  * Time-based automatic backup
+  * Choose backup location (external drive, folder)
+* **UI Themes**:
+
+  * Dark Mode / Light Mode toggle
+  * Theme & Template customization 
+---
+
+## 🎨 5. INTERACTIVE DASHBOARD DESIGN (SUGGESTED UI)
+
+| Section                  | UI Type        | Description                                    |
+| ------------------------ | -------------- | ---------------------------------------------- |
+| 📈 Today's Sales         | Stat Card      | Total Sales, Invoice Count, Revenue Up/Down    |
+| 📦 Low Stock Alert       | Badge List     | List of low-stock items                        |
+| 🧍 Top Buyer             | Card + Photo   | Highest value customer today/this week         |
+| 📊 Revenue Trends        | Line/Bar Chart | Compare day/week/month sales                   |
+| 📂 Sales by Category     | Pie Chart      | Revenue per category                           |
+| 💸 Payment Breakdown     | Donut Chart    | % of payments by method                        |
+| ⚡ Quick Actions          | Icon Buttons   | Add Product, Create Invoice, Add Customer      |
+| 🧑‍💼 Staff Activity Log | List w/ icons  | Last login, activity summary, invoices created 
+| 📊 Product Report | Pie chart     | Colored pie segments          | Sales per product category        |
+cash, revenew grap, top product
+---
+
+

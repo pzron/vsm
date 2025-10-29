@@ -24,7 +24,7 @@ import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 
 function ProtectedRoute({ component: Component, requiredModule }: { component: () => JSX.Element; requiredModule?: string }) {
-  const { isAuthenticated, hasPermission } = useAuth();
+  const { isAuthenticated, hasPermission, user } = useAuth();
   const [location, setLocation] = useLocation();
 
   useEffect(() => {
@@ -34,7 +34,25 @@ function ProtectedRoute({ component: Component, requiredModule }: { component: (
   }, [isAuthenticated, setLocation]);
 
   useEffect(() => {
-    if (isAuthenticated && requiredModule && !hasPermission(requiredModule, "view")) {
+    if (!isAuthenticated) return;
+    // Extra: Customers page only for Admins
+    if (requiredModule === "Customers" && (user?.role || "").toLowerCase() !== "admin") {
+      const perms = JSON.parse(localStorage.getItem("permissions") || "{}");
+      const routes: Array<{ mod: string; path: string }> = [
+        { mod: "Dashboard", path: "/" },
+        { mod: "Invoicing", path: "/invoicing" },
+        { mod: "Products", path: "/products" },
+        { mod: "Inventory", path: "/inventory" },
+        { mod: "Sales", path: "/sales" },
+        { mod: "Reports", path: "/reports" },
+        { mod: "Staff", path: "/staff" },
+        { mod: "Settings", path: "/settings" },
+      ];
+      const dest = routes.find(r => r.mod === "Dashboard" || (perms[r.mod] && perms[r.mod].view))?.path || "/";
+      setLocation(dest);
+      return;
+    }
+    if (requiredModule && !hasPermission(requiredModule, "view")) {
       // redirect to first allowed route
       const perms = JSON.parse(localStorage.getItem("permissions") || "{}");
       const routes: Array<{ mod: string; path: string }> = [
@@ -51,7 +69,7 @@ function ProtectedRoute({ component: Component, requiredModule }: { component: (
       const dest = routes.find(r => r.mod === "Dashboard" || (perms[r.mod] && perms[r.mod].view))?.path || "/";
       setLocation(dest);
     }
-  }, [isAuthenticated, requiredModule, hasPermission, setLocation]);
+  }, [isAuthenticated, requiredModule, hasPermission, setLocation, user]);
 
   if (!isAuthenticated) {
     return null;

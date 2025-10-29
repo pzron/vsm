@@ -46,9 +46,9 @@ export function ProductsTable() {
   const priceForCustomer = (p?: Product | undefined) => {
     if (!p) return 0;
     const t = (selectedCustomer?.type || "Retail").toLowerCase();
-    if (t === "wholesale" && p.wholesalePrice) return parseFloat(String(p.wholesalePrice));
+    if (t === "Repurches" && p.RepurchesPrice) return parseFloat(String(p.RepurchesPrice));
     if (t === "vip" && p.vipPrice) return parseFloat(String(p.vipPrice));
-    return parseFloat(String(p.retailPrice || 0));
+    return parseFloat(String(p.RepurchesPrice || 0));
   };
 
   const cartSubtotal = useMemo(() => {
@@ -190,7 +190,7 @@ export function ProductsTable() {
                       {product.currentStock}
                     </Badge>
                   </TableCell>
-                  <TableCell className="font-mono">{formatCurrency(product.retailPrice)}</TableCell>
+                  <TableCell className="font-mono">{formatCurrency(product.RepurchesPrice)}</TableCell>
                   <TableCell>{(product as any).points ?? 0}</TableCell>
                   <TableCell>
                     <Badge variant={product.currentStock > 0 ? "default" : "secondary"}>

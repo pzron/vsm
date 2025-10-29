@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowUpCircle, ArrowDownCircle, Edit2, Search, FileText, AlertTriangle, Bell } from "lucide-react";
+import { ArrowUpCircle, ArrowDownCircle, Edit2, Search, FileText, AlertTriangle, Bell, BarChart3 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Product, InventoryAdjustment } from "@shared/schema";
@@ -18,6 +18,7 @@ import { formatDistanceToNow } from "date-fns";
 import { InventoryAdjustDialog } from "@/components/InventoryAdjustDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
+import { InventoryReportDialog } from "@/components/InventoryReportDialog";
 
 export function InventoryTable() {
   const [search, setSearch] = useState("");
@@ -166,10 +167,14 @@ export function InventoryTable() {
             }
           />
         )}
-        <Button variant="outline" onClick={() => setLocation("/reports")} data-testid="button-view-adjustments">
-          <FileText className="h-4 w-4 mr-2" />
-          View Adjustments
-        </Button>
+        <InventoryReportDialog
+          trigger={
+            <Button variant="outline" data-testid="button-inventory-reports">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Reports
+            </Button>
+          }
+        />
       </div>
 
       <div className="rounded-md border">

@@ -10,10 +10,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Trash2, Plus, ScanLine, Search, RotateCcw, CreditCard, Smartphone, DollarSign, Landmark, Coins, ArrowUp, ArrowDown, StickyNote } from "lucide-react";
+import { Trash2, Plus, ScanLine, Search, RotateCcw, CreditCard, Smartphone, DollarSign, Landmark, Coins, ArrowUp, ArrowDown, StickyNote, Barcode } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Product, Customer } from "@shared/schema";
+import type { Product, Customer, Invoice } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRef } from "react";
@@ -34,6 +34,7 @@ export function InvoiceForm() {
   const queryClient = useQueryClient();
   const { data: products = [] } = useQuery<Product[]>({ queryKey: ["/api/products"] });
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
+  const { data: invoices = [] } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"], refetchInterval: 5000 });
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [customerSearch, setCustomerSearch] = useState<string>("");
@@ -54,7 +55,7 @@ export function InvoiceForm() {
     { id: "1", productId: "", qty: 1, price: 0, discountPct: 0 },
   ]);
   const [discount, setDiscount] = useState(0);
-  const [tax, setTax] = useState(10);
+  const [tax, setTax] = useState(0);
   const [redeemPoints, setRedeemPoints] = useState<number>(0);
   const initializedFromQuery = useRef(false);
   const [note, setNote] = useState("");
@@ -65,6 +66,10 @@ export function InvoiceForm() {
     { method: (selectedCustomer as any)?.preferredPayment || "Cash", amount: 0 },
   ]);
   const [autoUsePoints, setAutoUsePoints] = useState(true);
+  const [newCustomer, setNewCustomer] = useState<{ name: string; username: string; type: string; phone?: string; address?: string }>({ name: "", username: "", type: "Retail" });
+  const [newCustomerError, setNewCustomerError] = useState<string>("");
+  const [district, setDistrict] = useState<string>("");
+  const [thana, setThana] = useState<string>("");
   const [storeInfo, setStoreInfo] = useState<{ name?: string; address?: string; phone?: string; email?: string; logo?: string }>({});
   const [customFields, setCustomFields] = useState<{ label: string; value: string }[]>([]);
   const [expandNotes, setExpandNotes] = useState<Record<string, boolean>>({});
@@ -76,6 +81,25 @@ export function InvoiceForm() {
     if (t === "vip" && p.vipPrice) return parseFloat(String(p.vipPrice));
     return parseFloat(String(p.retailPrice || 0));
   };
+
+  // Build last purchase price map per product for the selected customer
+  const lastPriceByProduct = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!selectedCustomerId) return map;
+    const custInvoices = (invoices as Invoice[]).filter(inv => (inv.customerId as any) === selectedCustomerId);
+    // Sort by createdAt desc
+    custInvoices.sort((a,b) => new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime());
+    for (const inv of custInvoices) {
+      const items = (inv.items as any[]) || [];
+      for (const it of items) {
+        const pid = String(it.productId || "");
+        if (!pid || map.has(pid)) continue;
+        const price = parseFloat(String(it.price || it.unitPrice || 0));
+        if (!isNaN(price) && price > 0) map.set(pid, price);
+      }
+    }
+    return map;
+  }, [invoices, selectedCustomerId]);
 
   const effectiveUnit = (it: InvoiceItemRow) => {
     const d = Math.max(0, Math.min(100, Number(it.discountPct || 0)));
@@ -116,6 +140,21 @@ export function InvoiceForm() {
     return map;
   }, [products]);
 
+  // Minimal BD districts and thanas; extend as needed
+  const bdDistricts = [
+    "Dhaka","Chattogram","Rajshahi","Khulna","Sylhet","Barishal","Rangpur","Mymensingh"
+  ];
+  const bdThanas: Record<string, string[]> = {
+    Dhaka: ["Dhanmondi","Gulshan","Uttara","Mirpur","Tejgaon"],
+    Chattogram: ["Kotwali","Pahartali","Panchlaish","Halishahar"],
+    Rajshahi: ["Boalia","Rajpara","Motihar"],
+    Khulna: ["Khalishpur","Sonadanga","Khan Jahan Ali"],
+    Sylhet: ["Kotwali","Jalalabad","Shahporan"],
+    Barishal: ["Kotwali","Airport","Banaripara"],
+    Rangpur: ["Kotwali","Mahiganj","Haragach"],
+    Mymensingh: ["Kotwali","Trishal","Gafargaon"],
+  };
+
   const filteredProducts = useMemo(() => {
     const q = productFilter.trim().toLowerCase();
     if (!q) return products;
@@ -125,6 +164,32 @@ export function InvoiceForm() {
       (p.barcode || "").toLowerCase().includes(q)
     );
   }, [products, productFilter]);
+
+  // Auto-select customer when phone or username matches exactly
+  useEffect(() => {
+    if (selectedCustomerId) return; // already selected
+    const phone = (newCustomer.phone || "").trim();
+    const uname = (newCustomer.username || "").trim();
+    if (!phone && !uname) return;
+    const match = customers.find(c => (c.phone && c.phone === phone) || ((c as any).username && (c as any).username === uname));
+    if (match) setSelectedCustomerId(match.id);
+  }, [newCustomer.phone, newCustomer.username, customers, selectedCustomerId]);
+
+  // When a customer is selected, prefill inline form fields (for visibility)
+  useEffect(() => {
+    if (!selectedCustomer) return;
+    setNewCustomer(prev => ({
+      ...prev,
+      name: selectedCustomer.name || prev.name,
+      username: ((selectedCustomer as any).username || prev.username || ""),
+      type: (selectedCustomer.type as any) || prev.type || "Retail",
+      phone: selectedCustomer.phone || prev.phone,
+      address: ((selectedCustomer as any).address || prev.address || ""),
+    }));
+    setDistrict(((selectedCustomer as any).district || district || ""));
+    setThana(((selectedCustomer as any).thana || thana || ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomerId]);
 
   // Load store info/logo for template header
   useEffect(() => {
@@ -142,11 +207,12 @@ export function InvoiceForm() {
     setItems(prev => prev.map(it => {
       if (!it.productId) return it;
       const p = products.find(pp => pp.id === it.productId);
-      return { ...it, price: priceForCustomer(p) };
+      const last = lastPriceByProduct.get(it.productId);
+      return { ...it, price: last != null ? last : priceForCustomer(p) };
     }));
     // Auto-apply customer-type default discount
     const t = (selectedCustomer?.type || "Retail").toLowerCase();
-    const defaults: Record<string, number> = { retail: 0, wholesale: 5, vip: 10, member: 2, depo: 0 };
+    const defaults: Record<string, number> = { retail: 0, wholesale: 5, vip: 10, member: 2, depo: 0, dealer: 0 };
     setDiscount(defaults[t] ?? 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCustomerId]);
@@ -182,8 +248,8 @@ export function InvoiceForm() {
         const [pid, qtyStr] = pair.split(":");
         const qty = Math.max(1, Number(qtyStr) || 1);
         const p = products.find(pr => pr.id === pid);
-        if (!p) continue;
-        rows.push({ id: String(rowId++), productId: pid, qty, price: priceForCustomer(p) });
+        const last = lastPriceByProduct.get(pid);
+        rows.push({ id: String(rowId++), productId: pid, qty, price: last != null ? last : priceForCustomer(p) });
       }
       if (rows.length) setItems(rows);
     }
@@ -246,14 +312,26 @@ export function InvoiceForm() {
   const statusRef = useRef<"Draft" | "Completed">("Completed");
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Auto-create customer if none selected and new customer name provided
+      let customerIdToUse = selectedCustomerId || "";
+      if (!customerIdToUse && newCustomer.name.trim()) {
+        if (!newCustomer.username.trim() || !newCustomer.type.trim()) {
+          setNewCustomerError("Name, username, and type are required for new customer.");
+          throw new Error("Missing required new customer fields");
+        }
+        setNewCustomerError("");
+        const composedAddress = [thana, district, (newCustomer.address||"").trim()].filter(Boolean).join(", ");
+        const created = await apiRequest("POST", "/api/customers", { name: newCustomer.name.trim(), username: newCustomer.username.trim(), type: newCustomer.type.trim(), phone: (newCustomer.phone||"").trim() || undefined, address: composedAddress || undefined, district: district || undefined, thana: thana || undefined });
+        customerIdToUse = (created as any)?.id || (created as any)?._id || customerIdToUse;
+      }
       const availablePoints = selectedCustomer?.loyaltyPoints || 0;
       const pointsPaymentAmount = payments.find(p => p.method === "Points")?.amount || 0;
       const redeem = Math.max(0, Math.min(Math.floor(taxBase + taxAmount), Math.min(pointsPaymentAmount, availablePoints)));
       const finalTotal = Math.max(0, (taxBase + taxAmount) - redeem);
       const payload = {
         invoiceNumber: `INV-${Date.now()}`,
-        customerId: selectedCustomerId || undefined,
-        customerName: selectedCustomer?.name || undefined,
+        customerId: customerIdToUse || undefined,
+        customerName: (customerIdToUse ? (selectedCustomer?.name || newCustomer.name) : undefined),
         staffId: user?.id || "system",
         staffName: user?.fullName || "System",
         items: items
@@ -285,10 +363,14 @@ export function InvoiceForm() {
       setSelectedCustomerId("");
       setItems([{ id: "1", productId: "", qty: 1, price: 0 }]);
       setDiscount(0);
-      setTax(10);
+      setTax(0);
       setRedeemPoints(0);
       setPayments([{ method: (selectedCustomer as any)?.preferredPayment || "Cash", amount: 0 }]);
       setNote("");
+      setNewCustomer({ name: "", username: "", type: "Retail" });
+      setNewCustomerError("");
+      setDistrict("");
+      setThana("");
     },
   });
 
@@ -349,32 +431,13 @@ export function InvoiceForm() {
               </SelectContent>
             </Select>
             <div className="flex items-center justify-between pt-1">
-              <CustomerDialog
-                trigger={<Button type="button" size="sm" variant="outline">New Customer</Button>}
-              />
+              {/* New Customer removed as requested */}
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Auto use points</span>
                 <Switch checked={autoUsePoints} onCheckedChange={setAutoUsePoints} />
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1">
-              <div className="md:col-span-2">
-                <Input
-                  placeholder="Paste user ID or username"
-                  value={customerIdInput}
-                  onChange={(e) => setCustomerIdInput(e.target.value)}
-                  className="h-9"
-                />
-              </div>
-              <Button type="button" variant="secondary" onClick={() => {
-                const id = customerIdInput.trim();
-                if (!id) return;
-                const byId = customers.find(c => c.id === id);
-                const byUname = customers.find(c => ((c as any).username || "") === id);
-                const chosen = byId || byUname;
-                if (chosen) { setSelectedCustomerId(chosen.id); setCustomerSearch(""); }
-              }}>Use ID</Button>
-            </div>
+            {/* Removed customer ID paste/Use ID */}
           </div>
           <div className="space-y-2">
             <Label htmlFor="salesperson">Salesperson</Label>
@@ -382,198 +445,171 @@ export function InvoiceForm() {
           </div>
         </div>
 
-        {/* Quick add */}
+        {/* Inline New Customer */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="space-y-1">
-            <Label className="text-xs">Quick Add (Search)</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Type product name or SKU and press Enter"
-                value={productQuery}
-                onChange={(e) => setProductQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const q = productQuery.toLowerCase();
-                    const found = products.find(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q));
-                    if (found) addProductById(found.id);
-                    setProductQuery("");
-                  }
-                }}
-              />
-            </div>
+            <Label className="text-xs">Phone</Label>
+            <Input placeholder="Enter phone" value={newCustomer.phone || ""} onChange={(e) => setNewCustomer(prev => ({ ...prev, phone: e.target.value }))} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Barcode</Label>
-            <div className="relative">
-              <ScanLine className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Scan barcode"
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value)}
-              />
-            </div>
+            <Label className="text-xs">Username</Label>
+            <Input placeholder="Enter username" value={newCustomer.username} onChange={(e) => setNewCustomer(prev => ({ ...prev, username: e.target.value }))} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Actions</Label>
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" onClick={addItem}>
-                <Plus className="h-4 w-4 mr-1" /> Add Row
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => {
-                setItems([{ id: "1", productId: "", qty: 1, price: 0 }]);
-                setProductQuery(""); setBarcode(""); setDiscount(0); setTax(10); setRedeemPoints(0);
-              }}>
-                <RotateCcw className="h-4 w-4 mr-1" /> Clear
-              </Button>
-            </div>
+            <Label className="text-xs">New Customer Name</Label>
+            <Input placeholder="Enter name" value={newCustomer.name} onChange={(e) => setNewCustomer(prev => ({ ...prev, name: e.target.value }))} />
           </div>
+          <div className="space-y-1">
+            <Label className="text-xs">District</Label>
+            <Select value={district} onValueChange={(v) => { setDistrict(v); setThana(""); }}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select district" />
+              </SelectTrigger>
+              <SelectContent>
+                {bdDistricts.map(d => (<SelectItem key={d} value={d}>{d}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Thana</Label>
+            <Select value={thana} onValueChange={setThana} disabled={!district}>
+              <SelectTrigger>
+                <SelectValue placeholder={district ? "Select thana" : "Select district first"} />
+              </SelectTrigger>
+              <SelectContent>
+                {(bdThanas[district] || []).map(t => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Address</Label>
+            <Input placeholder="Optional" value={newCustomer.address || ""} onChange={(e) => setNewCustomer(prev => ({ ...prev, address: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Type</Label>
+            <Select value={newCustomer.type} onValueChange={(v) => setNewCustomer(prev => ({ ...prev, type: v }))}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Retail">Retail</SelectItem>
+                <SelectItem value="Wholesale">Wholesale</SelectItem>
+                <SelectItem value="VIP">VIP</SelectItem>
+                <SelectItem value="Member">Member</SelectItem>
+                <SelectItem value="Depo">Depo</SelectItem>
+                <SelectItem value="Dealer">Dealer</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {newCustomerError && (
+            <div className="md:col-span-3 text-[12px] text-destructive">{newCustomerError}</div>
+          )}
         </div>
+
+        {/* Quick add / Barcode / Actions removed as requested */}
 
         <Separator />
 
+        {/* Items (essential) */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <Label>Items</Label>
-            <Button size="sm" variant="outline" onClick={addItem} data-testid="button-add-item">
+            <Button size="sm" variant="outline" onClick={addItem} data-testid="button-add-item" className="border-0 bg-gradient-to-r from-emerald-500 via-purple-500 to-pink-500 text-white hover:brightness-110 shadow-md hover:shadow-lg">
               <Plus className="h-4 w-4 mr-1" />
               Add Item
             </Button>
           </div>
 
-          {items.map((item, index) => (
-            <div key={item.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end" data-testid={`invoice-item-${index}`}>
-              <div className="sm:col-span-5 space-y-1">
-                <Label className="text-xs">Product</Label>
-                <Select value={item.productId} onValueChange={(pid) => {
-                  const p = products.find(pp => pp.id === pid)!;
-                  setItems((prev) => prev.map((it) => it.id === item.id ? { ...it, productId: pid, price: priceForCustomer(p), qty: clampQty(pid, it.qty || 1) } : it));
-                }}>
-                  <SelectTrigger data-testid={`input-product-${index}`}>
-                    <SelectValue placeholder="Select product" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <div className="p-2 sticky top-0 bg-popover z-10">
-                      <div className="relative">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          className="pl-7 h-8"
-                          placeholder="Search name, SKU, or barcode"
-                          value={productFilter}
-                          onChange={(e) => setProductFilter(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    {filteredProducts.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {item.productId ? (
-                  <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-                    <span>SKU: {products.find(p => p.id === item.productId)?.sku}</span>
-                    <span>·</span>
-                    <span>Stock: {products.find(p => p.id === item.productId)?.currentStock ?? 0}</span>
+          {items.map((item, index) => {
+            const p = productById[item.productId] as any;
+            const img = p?.image || p?.photo || "";
+            const ptsPerUnit = p?.points ? Number(p.points) : 0;
+            const linePoints = ptsPerUnit * (item.qty || 0);
+            const lineTotal = effectiveUnit(item) * (item.qty || 0);
+            return (
+              <div key={item.id} className="rounded-xl border bg-gradient-to-r from-emerald-50 via-purple-50 to-pink-50 p-3 shadow-sm hover:shadow-md transition-shadow" data-testid={`invoice-item-${index}`}>
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-3">
+                  <div className="h-12 w-12 rounded-md bg-white border flex items-center justify-center overflow-hidden">
+                    {img ? (<img src={img} alt={p?.name||""} className="h-full w-full object-cover" onError={(e)=>{(e.currentTarget as HTMLImageElement).style.display='none';}} />) : (
+                      <div className="text-xs text-muted-foreground">{p?.name ? p.name.slice(0,2).toUpperCase() : "PI"}</div>
+                    )}
                   </div>
-                ) : null}
-              </div>
-              <div className="sm:col-span-2">
-                <Label className="text-xs">Qty</Label>
-                <Input
-                  type="number"
-                  value={item.qty}
-                  onChange={(e) => setItems(prev => prev.map(it => it.id === item.id ? { ...it, qty: clampQty(it.productId, Number(e.target.value)) } : it))}
-                  data-testid={`input-qty-${index}`}
-                />
-                <div className="flex gap-1 pt-1">
-                  <Button size="icon" variant="ghost" onClick={() => setItems(prev => prev.map(it => it.id === item.id ? { ...it, qty: clampQty(it.productId, (it.qty || 1) - 1) } : it))}><RotateCcw className="h-4 w-4 rotate-180" /></Button>
-                  <Button size="icon" variant="ghost" onClick={() => setItems(prev => prev.map(it => it.id === item.id ? { ...it, qty: clampQty(it.productId, (it.qty || 0) + 1) } : it))}><Plus className="h-4 w-4" /></Button>
+                  <div className="flex-1 min-w-0">
+                    <Label className="text-xs">Product</Label>
+                    <Select value={item.productId} onValueChange={(pid) => {
+                      const sel = products.find(pp => pp.id === pid)!;
+                      const last = lastPriceByProduct.get(pid);
+                      setItems((prev) => prev.map((it) => it.id === item.id ? { ...it, productId: pid, price: (last != null ? last : priceForCustomer(sel)), qty: clampQty(pid, it.qty || 1) } : it));
+                    }}>
+                      <SelectTrigger data-testid={`input-product-${index}`}>
+                        <SelectValue placeholder="Select product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <div className="p-2 sticky top-0 bg-popover z-10">
+                          <div className="relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input className="pl-7 h-8" placeholder="Search name, SKU, or barcode" value={productFilter} onChange={(e) => setProductFilter(e.target.value)} />
+                          </div>
+                        </div>
+                        {filteredProducts.map(fp => (
+                          <SelectItem key={fp.id} value={fp.id}>{fp.name} ({fp.sku})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="w-24">
+                    <Label className="text-xs">Qty</Label>
+                    <Input type="number" value={item.qty} onChange={(e) => setItems(prev => prev.map(it => it.id === item.id ? { ...it, qty: clampQty(it.productId, Number(e.target.value)) } : it))} data-testid={`input-qty-${index}`} className="backdrop-blur bg-white/70" />
+                  </div>
+                  <div className="w-28">
+                    <Label className="text-xs">Price</Label>
+                    <Input type="number" value={item.price} onChange={(e) => setItems(prev => prev.map(it => it.id === item.id ? { ...it, price: Number(e.target.value) } : it))} data-testid={`input-price-${index}`} className="backdrop-blur bg-white/70" />
+                  </div>
+                  {/* Inline colorful chips */}
+                  <div className="hidden md:flex items-center gap-2 ml-auto">
+                    <div className="rounded-md bg-white/70 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                      <span className="text-muted-foreground">Pt/U</span>
+                      <span className="font-mono font-semibold">{ptsPerUnit}</span>
+                    </div>
+                    <div className="rounded-md bg-emerald-100/80 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                      <span className="text-emerald-700">TP</span>
+                      <span className="font-mono font-semibold text-emerald-800">{linePoints}</span>
+                    </div>
+                    <div className="rounded-md bg-purple-100/80 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                      <span className="text-purple-700">Unit</span>
+                      <span className="font-mono font-semibold text-purple-800">{effectiveUnit(item).toFixed(2)}</span>
+                    </div>
+                    <div className="rounded-md bg-pink-100/80 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                      <span className="text-pink-700">Total</span>
+                      <span className="font-mono font-semibold text-pink-800">{lineTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="w-10 flex items-end justify-end">
+                    <Button variant="ghost" size="icon" onClick={() => removeItem(item.id)} data-testid={`button-remove-${index}`}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
                 </div>
-                {item.productId && (products.find(p => p.id === item.productId)?.currentStock ?? 0) < item.qty ? (
-                  <div className="text-[11px] text-destructive">Exceeds stock</div>
-                ) : null}
-              </div>
-              <div className="sm:col-span-2">
-                <Label className="text-xs">Price</Label>
-                <Input
-                  type="number"
-                  value={item.price}
-                  onChange={(e) => setItems(prev => prev.map(it => it.id === item.id ? { ...it, price: Number(e.target.value) } : it))}
-                  data-testid={`input-price-${index}`}
-                />
-                <div className="text-[11px] text-muted-foreground">Line: ${(effectiveUnit(item) * item.qty).toFixed(2)}</div>
-              </div>
-              <div className="sm:col-span-2">
-                <Label className="text-xs">Line Disc %</Label>
-                <Input type="number" value={item.discountPct || 0} onChange={(e) => setItems(prev => prev.map(it => it.id === item.id ? { ...it, discountPct: Math.max(0, Math.min(100, Number(e.target.value) || 0)) } : it))} />
-                <div className="text-[11px] text-muted-foreground">Unit: {effectiveUnit(item).toFixed(2)}</div>
-              </div>
-              <div className="sm:col-span-2">
-                <Label className="text-xs">Tier</Label>
-                <div className="flex gap-1 flex-wrap">
-                  <Button type="button" size="sm" variant="outline" onClick={() => {
-                    const p = products.find(pp => pp.id === item.productId);
-                    if (!p) return;
-                    setItems(prev => prev.map(it => it.id === item.id ? { ...it, price: parseFloat(String(p.retailPrice || 0)) } : it));
-                  }}>Retail</Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => {
-                    const p = products.find(pp => pp.id === item.productId);
-                    if (!p) return;
-                    if (p.vipPrice) setItems(prev => prev.map(it => it.id === item.id ? { ...it, price: parseFloat(String(p.vipPrice)) } : it));
-                  }}>VIP</Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => {
-                    const p = products.find(pp => pp.id === item.productId);
-                    if (!p) return;
-                    if (p.wholesalePrice) setItems(prev => prev.map(it => it.id === item.id ? { ...it, price: parseFloat(String(p.wholesalePrice)) } : it));
-                  }}>Whole</Button>
-                  <Button type="button" size="sm" variant="secondary" onClick={() => {
-                    const p = products.find(pp => pp.id === item.productId);
-                    if (!p) return;
-                    setItems(prev => prev.map(it => it.id === item.id ? { ...it, price: priceForCustomer(p) } : it));
-                  }}>Auto</Button>
+                {/* On small screens, show chips in a second row */}
+                <div className="mt-2 flex md:hidden flex-wrap items-center gap-2">
+                  <div className="rounded-md bg-white/70 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                    <span className="text-muted-foreground">Point/Unit</span>
+                    <span className="font-mono font-semibold">{ptsPerUnit}</span>
+                  </div>
+                  <div className="rounded-md bg-emerald-100/80 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                    <span className="text-emerald-700">Total Point</span>
+                    <span className="font-mono font-semibold text-emerald-800">{linePoints}</span>
+                  </div>
+                  <div className="rounded-md bg-purple-100/80 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                    <span className="text-purple-700">Unit</span>
+                    <span className="font-mono font-semibold text-purple-800">{effectiveUnit(item).toFixed(2)}</span>
+                  </div>
+                  <div className="rounded-md bg-pink-100/80 border px-2 py-1 text-[11px] flex items-center gap-1 shadow-sm">
+                    <span className="text-pink-700">Total</span>
+                    <span className="font-mono font-semibold text-pink-800">{lineTotal.toFixed(2)}</span>
+                  </div>
                 </div>
-                {(() => {
-                  const p = products.find(pp => pp.id === item.productId);
-                  const cost = p ? parseFloat(String(p.costPrice || 0)) : 0;
-                  const margin = (effectiveUnit(item) - cost) * (item.qty || 0);
-                  const cls = margin >= 0 ? "text-emerald-600" : "text-destructive";
-                  return <div className={`text-[11px] ${cls}`}>Margin: {margin.toFixed(2)}</div>;
-                })()}
               </div>
-              <div className="sm:col-span-1 flex gap-1">
-                <Button type="button" variant="ghost" size="icon" onClick={() => moveItem(index, -1)} aria-label="move up"><ArrowUp className="h-4 w-4" /></Button>
-                <Button type="button" variant="ghost" size="icon" onClick={() => moveItem(index, 1)} aria-label="move down"><ArrowDown className="h-4 w-4" /></Button>
-                <Button type="button" variant="ghost" size="icon" onClick={() => setExpandNotes(prev => ({ ...prev, [item.id]: !prev[item.id] }))} aria-label="note"><StickyNote className="h-4 w-4" /></Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => removeItem(item.id)}
-                  data-testid={`button-remove-${index}`}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" onClick={() => {
-                  setItems(prev => [...prev, { ...item, id: Date.now().toString() }]);
-                }} aria-label="duplicate">
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <Button type="button" variant="ghost" size="icon" onClick={() => {
-                  setItems(prev => prev.map(it => it.id === item.id ? { id: item.id, productId: "", qty: 1, price: 0, discountPct: 0 } : it));
-                }} aria-label="clear">
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              </div>
-
-              {expandNotes[item.id] ? (
-                <div className="sm:col-span-12">
-                  <Label className="text-xs">Line Note</Label>
-                  <Input placeholder="Optional note for this line" value={item.note || ""} onChange={(e) => setItems(prev => prev.map(it => it.id === item.id ? { ...it, note: e.target.value } : it))} />
-                </div>
-              ) : null}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <Separator />
@@ -582,7 +618,7 @@ export function InvoiceForm() {
           {selectedCustomer ? (
             <div className="text-sm flex items-center justify-between">
               <span className="text-muted-foreground">Available Points</span>
-              <span className="font-mono font-semibold">{selectedCustomer.loyaltyPoints}</span>
+              <span className="px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 font-mono font-semibold">{selectedCustomer.loyaltyPoints}</span>
             </div>
           ) : null}
           <div className="flex justify-between text-sm">
@@ -603,13 +639,7 @@ export function InvoiceForm() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="tax">Tax (%)</Label>
-              <Input
-                id="tax"
-                type="number"
-                value={tax}
-                onChange={(e) => setTax(Number(e.target.value))}
-                data-testid="input-tax"
-              />
+              <Input id="tax" type="number" value={0} disabled readOnly data-testid="input-tax" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="redeem">Redeem Points</Label>
@@ -630,12 +660,12 @@ export function InvoiceForm() {
 
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Tax</span>
-            <span className="font-mono">+${taxAmount.toFixed(2)}</span>
+            <span className="font-mono">+$0.00</span>
           </div>
 
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Redeemed</span>
-            <span className="font-mono">-${usablePoints.toFixed(2)}</span>
+            <span className="text-sky-700">Redeemed</span>
+            <span className="font-mono text-sky-800">-${usablePoints.toFixed(2)}</span>
           </div>
 
           <Separator />
@@ -645,10 +675,7 @@ export function InvoiceForm() {
             <span className="font-mono font-bold">${total.toFixed(2)}</span>
           </div>
 
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Estimated Earned Points</span>
-            <span className="font-mono font-semibold">{earnedPoints}</span>
-          </div>
+          {/* Estimated Earned Points removed as requested */}
           <div className="space-y-1">
             <Label className="text-xs">Notes</Label>
             <Input placeholder="Optional note shown on print" value={note} onChange={(e) => setNote(e.target.value)} />
@@ -664,12 +691,21 @@ export function InvoiceForm() {
             <Button type="button" size="sm" variant="outline" onClick={() => setPayments([...payments, { method: (selectedCustomer as any)?.preferredPayment || "Cash", amount: 0 }])}>Add Payment</Button>
           </div>
           {payments.map((p, idx) => (
-            <div key={idx} className="flex gap-2 items-end">
-              <div className="w-40 space-y-1">
+            <div key={idx} className="flex flex-wrap gap-2 items-end">
+              <div className="w-48 space-y-1">
                 <Label className="text-xs">Method</Label>
                 <Select value={p.method} onValueChange={(v) => setPayments(prev => prev.map((pp, i) => i === idx ? { ...pp, method: v } : pp))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Payment method" />
+                    <SelectValue>
+                      <div className="flex items-center gap-2">
+                        {p.method === "Cash" && <DollarSign className="h-4 w-4" />}
+                        {p.method === "Bank" && <Landmark className="h-4 w-4" />}
+                        {p.method === "Card" && <CreditCard className="h-4 w-4" />}
+                        {p.method === "Mobile" && <Smartphone className="h-4 w-4" />}
+                        {p.method === "Points" && <Coins className="h-4 w-4" />}
+                        <span>{p.method || "Select method"}</span>
+                      </div>
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Cash"><div className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Cash</div></SelectItem>
@@ -687,27 +723,17 @@ export function InvoiceForm() {
                     const val = Number(e.target.value) || 0;
                     setPayments(prev => prev.map((pp, i) => {
                       if (i !== idx) return pp;
-                      // Clamp points to available
                       if (pp.method === "Points") {
                         const available = selectedCustomer?.loyaltyPoints || 0;
                         const maxUse = Math.min(Math.floor(taxBase + taxAmount), available);
-                        const clamped = Math.max(0, Math.min(val, maxUse));
-                        // keep redeemPoints in sync
-                        setRedeemPoints(clamped);
-                        return { ...pp, amount: clamped };
+                        return { ...pp, amount: Math.min(val, maxUse) };
                       }
                       return { ...pp, amount: val };
                     }));
                   }}
                 />
               </div>
-              {p.method !== "Cash" && p.method !== "Points" ? (
-                <div className="flex-1 space-y-1">
-                  <Label className="text-xs">Reference</Label>
-                  <Input placeholder="Txn ID / Gateway Ref" value={p.ref || ""} onChange={(e) => setPayments(prev => prev.map((pp, i) => i === idx ? { ...pp, ref: e.target.value } : pp))} />
-                </div>
-              ) : null}
-              <Button type="button" variant="ghost" size="icon" onClick={() => setPayments(prev => prev.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => setPayments(prev => prev.filter((_, i) => i !== idx))}><Trash2 className="h-4 w-4" /></Button>
             </div>
           ))}
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -743,7 +769,7 @@ export function InvoiceForm() {
           <Button className="flex-1" variant="outline" onClick={() => { statusRef.current = "Draft"; saveMutation.mutate(); }} data-testid="button-save-draft">
             Save as Draft
           </Button>
-          <Button className="flex-1" onClick={() => { statusRef.current = "Completed"; saveMutation.mutate(); }} data-testid="button-complete-invoice" disabled={items.filter(i=>i.productId&&i.qty>0).length===0}>
+          <Button className="flex-1" onClick={() => { statusRef.current = "Completed"; saveMutation.mutate(); }} data-testid="button-complete-invoice">
             Complete Sale
           </Button>
           <Button variant="outline" data-testid="button-print-invoice" onClick={() => window.print()}>
@@ -753,111 +779,98 @@ export function InvoiceForm() {
       </CardContent>
     </Card>
     <div className="hidden print:block text-xs text-black">
-      <div className="max-w-2xl mx-auto p-4 border border-black">
+      <div className="max-w-2xl mx-auto p-6 border border-black">
+        {/* Header (Company info + Invoice number with barcode) */}
         <div className="flex items-start justify-between">
-          <div className="flex items-start gap-2">
+          <div className="flex items-start gap-3">
             {storeInfo.logo ? (
-              <img src={storeInfo.logo} alt="Logo" className="h-10 w-10 object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+              <img src={storeInfo.logo} alt="Logo" className="h-12 w-12 object-contain" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
             ) : null}
             <div>
-              <div className="text-base font-bold">{storeInfo.name || "Store"}</div>
-              {storeInfo.address ? <div>{storeInfo.address}</div> : null}
+              <div className="text-lg font-extrabold">{storeInfo.name || "Store"}</div>
+              {storeInfo.address ? <div className="opacity-80">{storeInfo.address}</div> : null}
               {(storeInfo.phone || storeInfo.email) ? (
-                <div>
-                  {storeInfo.phone}{storeInfo.phone && storeInfo.email ? " · " : ""}{storeInfo.email}
-                </div>
+                <div className="opacity-80">{storeInfo.phone}{storeInfo.phone && storeInfo.email ? " · " : ""}{storeInfo.email}</div>
               ) : null}
+              {/* Fixed company contact lines as requested */}
+              <div className="opacity-90">Muradpur, Panchlaish, Chattogram, Bangladesh</div>
+              <div className="opacity-90">support@myvertexbd.com · 01813142677</div>
             </div>
           </div>
           <div className="text-right">
-            <div className="font-semibold">Cash Memo</div>
-            <div>Date: {new Date().toLocaleDateString()}</div>
-            <div>No: {printInvoiceNumber}</div>
+            <div className="text-base font-extrabold text-sky-700">INVOICE</div>
+            <div className="flex items-center justify-end gap-1 opacity-90"><Barcode className="h-3 w-3" /> <span className="font-mono">{printInvoiceNumber}</span></div>
+            <div className="opacity-80">Date: {new Date().toLocaleDateString()}</div>
           </div>
         </div>
-        <div className="my-2 border-t border-dashed border-black" />
+        <div className="my-3 border-t border-dashed border-black" />
+        {/* Buyer info */}
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <div><span className="font-semibold">Customer:</span> {selectedCustomer?.name || "Walk-in"}</div>
-            <div><span className="font-semibold">ID:</span> {selectedCustomer?.id || "-"}</div>
-            <div><span className="font-semibold">Phone:</span> {selectedCustomer?.phone || "-"}</div>
-            <div><span className="font-semibold">Address:</span> {(selectedCustomer as any)?.address || "-"}</div>
+            <div className="uppercase text-[10px] opacity-70">Invoice To</div>
+            <div className="text-base font-semibold">{selectedCustomer?.name || "Walk-in"}</div>
+            {(selectedCustomer?.phone || (selectedCustomer as any)?.email) ? (
+              <div className="opacity-80">{selectedCustomer?.phone}{selectedCustomer?.phone && (selectedCustomer as any)?.email ? " · " : ""}{(selectedCustomer as any)?.email || ""}</div>
+            ) : null}
+            <div className="opacity-80">{(selectedCustomer as any)?.address || "-"}</div>
           </div>
           <div className="text-right">
             <div><span className="font-semibold">Salesperson:</span> {user?.fullName || "System"}</div>
           </div>
         </div>
-        <div className="my-2 border-t border-dashed border-black" />
+        <div className="my-3 border-t border-dashed border-black" />
+        {/* Items table (colorful headers and totals) */}
         <div>
-          <div className="grid grid-cols-12 font-semibold">
-            <div className="col-span-6">Product</div>
-            <div className="col-span-2 text-center">Points</div>
-            <div className="col-span-2 text-center">Unit Type</div>
+          <div className="grid grid-cols-12 font-semibold text-sky-800">
+            <div className="col-span-1">#</div>
+            <div className="col-span-5">Item</div>
+            <div className="col-span-2 text-center">Point</div>
             <div className="col-span-1 text-right">Price</div>
-            <div className="col-span-1 text-right">Amount</div>
+            <div className="col-span-1 text-center">Qty</div>
+            <div className="col-span-1 text-center">Total Pt</div>
+            <div className="col-span-1 text-right">Total Price</div>
           </div>
           <div className="border-t border-black" />
           {items.filter(i=>i.productId && i.qty>0).map((it, idx) => {
             const p = productById[it.productId];
-            const pts = (p as any)?.points != null ? Number((p as any)?.points) * it.qty : 0;
-            const typ = (p as any)?.type || (p as any)?.category || "-";
+            const ptUnit = (p as any)?.points != null ? Number((p as any)?.points) : 0;
             const price = Number(it.price) || 0;
-            const amount = price * it.qty;
+            const totPt = ptUnit * (it.qty || 0);
+            const totPrice = price * (it.qty || 0);
             return (
               <div key={idx} className="grid grid-cols-12">
-                <div className="col-span-6">{p?.name || it.productId} x{it.qty}</div>
-                <div className="col-span-2 text-center">{pts}</div>
-                <div className="col-span-2 text-center">{typ}</div>
-                <div className="col-span-1 text-right">{price.toFixed(2)}</div>
-                <div className="col-span-1 text-right">{amount.toFixed(2)}</div>
+                <div className="col-span-1">{idx+1}</div>
+                <div className="col-span-5">
+                  <div className="font-medium">{p?.name || it.productId}</div>
+                  {(p as any)?.desc ? <div className="opacity-70 text-[10px]">{(p as any)?.desc}</div> : null}
+                </div>
+                <div className="col-span-2 text-center text-emerald-700 font-semibold">{ptUnit}</div>
+                <div className="col-span-1 text-right">৳ {price.toFixed(2)}</div>
+                <div className="col-span-1 text-center">{it.qty}</div>
+                <div className="col-span-1 text-center text-emerald-800 font-semibold">{totPt}</div>
+                <div className="col-span-1 text-right text-pink-800 font-semibold">৳ {totPrice.toFixed(2)}</div>
               </div>
             );
           })}
         </div>
-        <div className="my-2 border-t border-dashed border-black" />
+        <div className="my-3 border-t border-dashed border-black" />
+        {/* Totals */}
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <div>
-              <span className="font-semibold">Note:</span>
-              {note ? <span> {note}</span> : null}
-            </div>
-            {!note ? (
-              <div className="mt-1 h-12 border border-dashed border-black" />
-            ) : null}
-            {customFields?.length ? (
-              <div className="mt-1 space-y-0.5">
-                {customFields.map((f, i) => (
-                  <div key={i}><span className="font-semibold">{f.label}:</span> {f.value}</div>
-                ))}
-              </div>
-            ) : null}
+            <div className="text-base font-semibold">Thank you!</div>
           </div>
           <div className="text-right space-y-0.5">
-            <div><span className="font-semibold">Subtotal:</span> {subtotal.toFixed(2)}</div>
-            <div><span className="font-semibold">Discount:</span> -{discountAmount.toFixed(2)}</div>
-            <div><span className="font-semibold">Tax:</span> +{taxAmount.toFixed(2)}</div>
-            <div><span className="font-semibold">Redeemed:</span> -{usablePoints.toFixed(2)}</div>
-            <div className="text-base font-bold"><span>Total:</span> {total.toFixed(2)}</div>
+            <div><span className="font-semibold">SUBTOTAL:</span> ৳ {subtotal.toFixed(2)}</div>
+            <div><span className="font-semibold">DISCOUNT:</span> - ৳ {discountAmount.toFixed(2)}</div>
+            <div><span className="font-semibold">TAX:</span> + ৳ {taxAmount.toFixed(2)}</div>
+            <div><span className="font-semibold">REDEEMED:</span> - ৳ {usablePoints.toFixed(2)}</div>
+            <div className="text-base font-extrabold text-sky-700"><span>GRAND TOTAL:</span> ৳ {total.toFixed(2)}</div>
           </div>
         </div>
-        <div className="my-2 border-t border-dashed border-black" />
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {Array.from(new Set(payments.map(p=>p.method))).map((m, i) => (
-              <div key={i} className="flex items-center gap-1">
-                {m === "Cash" ? <DollarSign className="h-4 w-4" /> : null}
-                {m === "Bank" ? <Landmark className="h-4 w-4" /> : null}
-                {m === "Card" ? <CreditCard className="h-4 w-4" /> : null}
-                {m === "Mobile" ? <Smartphone className="h-4 w-4" /> : null}
-                {m === "Points" ? <Coins className="h-4 w-4" /> : null}
-                <span>{m}</span>
-              </div>
-            ))}
-          </div>
-          <div className="text-right">
-            <div className="font-semibold">Thank you for your purchase!</div>
-            <div className="text-[10px]">Please come again</div>
-          </div>
+        <div className="my-3 border-t border-dashed border-black" />
+        {/* Footer note (remove extra icons, keep clean) */}
+        <div className="text-right">
+          <div className="font-semibold">Invoice was created on a computer and is valid without signature and seal.</div>
         </div>
       </div>
     </div>

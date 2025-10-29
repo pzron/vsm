@@ -167,13 +167,40 @@ export default function Dashboard() {
                 })()}
               </>
             )}
-            <StatCard
-              title="Total Invoices"
-              value={formatNumber(analytics.totalInvoices)}
-              icon={ShoppingCart}
-              iconColor="text-info"
-              variant="blue"
-            />
+            {user?.role === "Admin" ? (
+              <StatCard
+                title="Total Invoices"
+                value={formatNumber(analytics.totalInvoices)}
+                icon={ShoppingCart}
+                iconColor="text-info"
+                variant="blue"
+              />
+            ) : (
+              (() => {
+                try {
+                  const today = new Date();
+                  today.setHours(0,0,0,0);
+                  const tomorrow = new Date(today);
+                  tomorrow.setDate(today.getDate() + 1);
+                  let count = 0;
+                  for (const inv of invoices) {
+                    const created = new Date(inv.createdAt as any);
+                    if (created >= today && created < tomorrow) count += 1;
+                  }
+                  return (
+                    <StatCard
+                      title="Today Invoices"
+                      value={formatNumber(count)}
+                      icon={ShoppingCart}
+                      iconColor="text-info"
+                      variant="blue"
+                    />
+                  );
+                } catch {
+                  return null;
+                }
+              })()
+            )}
             <StatCard
               title="Total Products"
               value={formatNumber(analytics.totalProducts)}
@@ -181,20 +208,24 @@ export default function Dashboard() {
               iconColor="text-primary"
               variant="teal"
             />
-            <StatCard
-              title="Total Customers"
-              value={formatNumber(analytics.totalCustomers)}
-              icon={Users}
-              iconColor="text-primary"
-              variant="pink"
-            />
-            <StatCard
-              title="Total Staff"
-              value={formatNumber(analytics.totalStaff)}
-              icon={Briefcase}
-              iconColor="text-info"
-              variant="purple"
-            />
+            {user?.role === "Admin" && (
+              <>
+                <StatCard
+                  title="Total Customers"
+                  value={formatNumber(analytics.totalCustomers)}
+                  icon={Users}
+                  iconColor="text-primary"
+                  variant="pink"
+                />
+                <StatCard
+                  title="Total Staff"
+                  value={formatNumber(analytics.totalStaff)}
+                  icon={Briefcase}
+                  iconColor="text-info"
+                  variant="purple"
+                />
+              </>
+            )}
             <StatCard
               title="Low Stock Items"
               value={formatNumber(analytics.lowStockCount)}
@@ -214,21 +245,25 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <RevenueChart />
-        </div>
+        {user?.role === "Admin" && (
+          <div className="lg:col-span-2">
+            <RevenueChart />
+          </div>
+        )}
         <QuickActions />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <CategoryPieChart />
-        <CategoryPieChart title="Payment Breakdown" />
-      </div>
+      {user?.role === "Admin" && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <CategoryPieChart />
+          <CategoryPieChart title="Payment Breakdown" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <LowStockAlert />
         <TopBuyerCard />
-        <StaffActivityLog />
+        {user?.role === "Admin" && <StaffActivityLog />}
       </div>
     </div>
   );

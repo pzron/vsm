@@ -8,12 +8,16 @@ import { TopCustomersCard } from "@/components/TopCustomersCard";
 import { InventoryReports } from "@/components/InventoryReports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Invoice } from "@shared/schema";
+import { useAuth } from "@/contexts/AuthContext";
+import { InvoicePreviewDialog } from "@/components/InvoicePreviewDialog";
 
 export default function Reports() {
-  const { data: invoices = [] } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });
+  const { data: invoices = [] } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"], refetchInterval: 5000 });
+  const { user } = useAuth();
   const [notes, setNotes] = useState<string>("");
   const [filters, setFilters] = useState<ReportFilters | undefined>(undefined);
   const [showAll, setShowAll] = useState(false);
@@ -43,11 +47,7 @@ export default function Reports() {
           <ReportsFilters onGenerate={(f) => setFilters(f)} />
         </div>
         <div className="lg:col-span-2 space-y-6">
-          <div className="flex gap-2 justify-end">
-            <Button size="sm" variant="default" onClick={() => setShowAll((v) => !v)}>{showAll ? "Hide All Invoices" : "All Invoices"}</Button>
-            <Button size="sm" variant="outline" onClick={() => exportCSV(invoices, filters)}>Export CSV</Button>
-            <Button size="sm" variant="outline" onClick={() => window.print()}>Print</Button>
-          </div>
+          <TodayCashToolbar invoices={invoices} onToggleAll={() => setShowAll((v) => !v)} showAll={showAll} onExport={() => exportCSV(invoices, filters)} />
           {showAll && (
             <AllInvoicesTable
               invoices={invoices}
@@ -73,11 +73,15 @@ export default function Reports() {
               }}
             />
           )}
-          <RevenueChart filters={filters} />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <CategoryPieChart title="Revenue by Category" filters={filters} />
-            <PaymentBreakdownChart filters={filters} />
-          </div>
+          {user?.role === "Admin" && (
+            <>
+              <RevenueChart filters={filters} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <CategoryPieChart title="Revenue by Category" filters={filters} />
+                <PaymentBreakdownChart filters={filters} />
+              </div>
+            </>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <TopProductsCard />
             <TopCustomersCard />
@@ -119,6 +123,139 @@ export default function Reports() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function TodayCashToolbar({ invoices, onToggleAll, showAll, onExport }: { invoices: Invoice[]; onToggleAll: () => void; showAll: boolean; onExport: () => void }) {
+  const [open, setOpen] = useState(false);
+  const formatYMD = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [selectedDate, setSelectedDate] = useState<string>(formatYMD(new Date()));
+  const [deposit, setDeposit] = useState<number>(0);
+  const storageKey = useMemo(() => `today_cash_deposit_${selectedDate}`, [selectedDate]);
+  // load persisted deposit for selected date
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const obj = JSON.parse(raw) as { deposit?: number };
+        setDeposit(Number(obj.deposit || 0));
+      }
+    } catch {}
+  }, [storageKey]);
+  // persist on change per date
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify({ deposit }));
+    } catch {}
+  }, [storageKey, deposit]);
+
+  const today = useMemo(() => {
+    const start = new Date(selectedDate);
+    start.setHours(0,0,0,0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    const todays = invoices.filter(inv => {
+      const d = new Date(inv.createdAt as any);
+      return d >= start && d < end;
+    });
+    let totalSales = 0;
+    let totalCost = 0;
+    const pay = { cash: 0, bank: 0, mobile: 0, point: 0, other: 0 } as Record<string, number>;
+    const invCount = { cash: 0, bank: 0, mobile: 0, point: 0, other: 0, total: todays.length } as Record<string, number>;
+    for (const inv of todays) {
+      totalSales += parseFloat(inv.total as string);
+      const items = (inv.items as any[]) || [];
+      for (const it of items) {
+        const qty = it.quantity || 0;
+        const c = parseFloat(it.costPrice || "0");
+        totalCost += qty * c;
+      }
+      const pays = (inv.payments as any[]) || [];
+      let hasCash=false, hasBank=false, hasMobile=false, hasPoint=false, hasOther=false;
+      for (const p of pays) {
+        const m = String(p.method || "").toLowerCase();
+        const amt = parseFloat(p.amount || "0");
+        if (m.includes("cash")) { pay.cash += amt; hasCash = true; }
+        else if (m.includes("bank") || m.includes("card")) { pay.bank += amt; hasBank = true; }
+        else if (m.includes("mobile") || m.includes("bkash") || m.includes("nagad") || m.includes("rocket")) { pay.mobile += amt; hasMobile = true; }
+        else if (m.includes("point")) { pay.point += amt; hasPoint = true; }
+        else { pay.other += amt; hasOther = true; }
+      }
+      if (hasCash) invCount.cash += 1;
+      if (hasBank) invCount.bank += 1;
+      if (hasMobile) invCount.mobile += 1;
+      if (hasPoint) invCount.point += 1;
+      if (hasOther) invCount.other += 1;
+    }
+    const earn = totalSales - totalCost;
+    return { totalSales, totalCost, earn, pay, invCount };
+  }, [invoices, selectedDate]);
+
+  return (
+    <div className="flex gap-2 justify-end flex-wrap">
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline">Today Cash</Button>
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Today Cash Summary</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Date</span>
+              <input type="date" className="border rounded px-2 py-1 text-sm" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
+            </div>
+            <div className="flex items-center justify-between"><span>Total Sales</span><span className="font-mono">${today.totalSales.toFixed(2)}</span></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="flex items-center justify-between"><span>Cash</span><span className="font-mono">${today.pay.cash.toFixed(2)}</span></div>
+                <div className="text-xs text-muted-foreground">Invoices: {today.invCount.cash}</div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between"><span>Bank</span><span className="font-mono">${today.pay.bank.toFixed(2)}</span></div>
+                <div className="text-xs text-muted-foreground">Invoices: {today.invCount.bank}</div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between"><span>Mobile</span><span className="font-mono">${today.pay.mobile.toFixed(2)}</span></div>
+                <div className="text-xs text-muted-foreground">Invoices: {today.invCount.mobile}</div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between"><span>Point</span><span className="font-mono">${today.pay.point.toFixed(2)}</span></div>
+                <div className="text-xs text-muted-foreground">Invoices: {today.invCount.point}</div>
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground">Total invoices today: {today.invCount.total}</div>
+            {today.pay.other > 0 && (
+              <div className="flex items-center justify-between"><span>Other</span><span className="font-mono">${today.pay.other.toFixed(2)}</span></div>
+            )}
+            <div className="h-px bg-border" />
+            <div className="space-y-1">
+              <div className="text-xs text-muted-foreground">Deposit (Bank + Mobile)</div>
+              <label className="flex items-center justify-between gap-3">
+                <span>Total Deposit</span>
+                <input type="number" min="0" step="0.01" className="w-40 border rounded px-2 py-1 font-mono" value={deposit} onChange={(e) => setDeposit(Number(e.target.value || 0))} />
+              </label>
+            </div>
+            <div className="h-px bg-border" />
+            <div className="space-y-1">
+              <div className="flex items-center justify-between"><span>Total Cost</span><span className="font-mono">${today.totalCost.toFixed(2)}</span></div>
+              <div className="flex items-center justify-between"><span>Earn</span><span className="font-mono font-semibold">${today.earn.toFixed(2)}</span></div>
+            </div>
+            <div className="h-px bg-border" />
+            <div className="flex items-center justify-between text-base font-medium">
+              <span>Net Cash In Hand</span>
+              <span className="font-mono">
+                ${Math.max(0, today.pay.cash - deposit).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <Button size="sm" variant="default" onClick={onToggleAll}>{showAll ? "Hide All Invoices" : "All Invoices"}</Button>
+      <Button size="sm" variant="outline" onClick={onExport}>Export CSV</Button>
+      <Button size="sm" variant="outline" onClick={() => window.print()}>Print</Button>
     </div>
   );
 }
@@ -215,6 +352,7 @@ function AllInvoicesTable({ invoices, search, onSearch, page, onPageChange, page
                   <td className="py-2 pr-2 text-right font-mono">${parseFloat(inv.total as string).toFixed(2)}</td>
                   <td className="py-2 pr-2 text-right">
                     <div className="flex gap-2 justify-end">
+                      <InvoicePreviewDialog invoice={inv} trigger={<Button size="sm" variant="outline">View</Button>} />
                       <Button size="sm" variant="outline" onClick={() => onEdit(inv)}>Edit</Button>
                       <Button size="sm" variant="destructive" onClick={() => onDelete(inv.id as string)}>Delete</Button>
                     </div>

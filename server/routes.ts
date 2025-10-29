@@ -322,9 +322,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const item of items) {
         const product = await storage.getProduct(item.productId);
         if (product) {
-          await storage.updateProduct(item.productId, {
-            currentStock: product.currentStock - item.quantity,
-          });
+          const newStock = product.currentStock - (item.quantity || 0);
+          await storage.updateProduct(item.productId, { currentStock: newStock });
         }
       }
       // Loyalty points: compute earned based on product.points if available
@@ -368,6 +367,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const invoice = await storage.createInvoice(validatedData);
+
+      // Create inventory adjustments for Stock Out with invoice reference
+      try {
+        const sessionUserId = (req as any).session?.userId as string | undefined;
+        const user = sessionUserId ? await storage.getUser(sessionUserId) : null;
+        const adjustedBy = sessionUserId || "system";
+        const adjustedByName = user?.fullName || "System";
+        for (const item of items) {
+          const p = await storage.getProduct(item.productId);
+          if (!p) continue;
+          const newStock = p.currentStock; // already reduced above
+          const previousStock = newStock + (item.quantity || 0);
+          const reason = `Invoice: ${(invoice as any).invoiceNumber || invoice.id}`;
+          await storage.createInventoryAdjustment({
+            productId: p.id,
+            productName: p.name,
+            type: "Stock Out" as any,
+            quantity: item.quantity || 0,
+            previousStock,
+            newStock,
+            reason,
+            adjustedBy,
+            adjustedByName,
+          } as any);
+        }
+      } catch {}
       res.json(invoice);
     } catch (error) {
       res.status(400).json({ error: "Failed to create invoice" });

@@ -73,7 +73,7 @@ const menuItems = [
 
 export function AppSidebar() {
   const [location] = useLocation();
-  const { hasPermission } = useAuth();
+  const { user, hasPermission } = useAuth();
 
   return (
     <Sidebar>
@@ -94,7 +94,11 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {menuItems
-                .filter((item) => item.title === "Dashboard" || hasPermission(item.title, "view"))
+                .filter((item) => {
+                  if (item.title === "Dashboard") return true;
+                  if (item.title === "Customers" && (user?.role || "").toLowerCase() !== "admin") return false;
+                  return hasPermission(item.title, "view");
+                })
                 .map((item) => {
                   const isActive = location === item.url;
                   return (
